@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>현직 셀러가 만드는 상품 이미지 + 상세페이지</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<style>
+  /* ───── 글로벌 — 단어 줄바꿈 보호 ───── */
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+  html, body {
+    background: #0F1B3D;
+    font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    color: #F9F7F2;
+  }
+  .page { width: 1000px; margin: 0 auto; background: #0F1B3D; }
+  section { position: relative; width: 1000px; overflow: hidden; }
+
+  /* 섹션 번호 */
+  .section-num {
+    font-size: 28px;
+    color: #C9A961;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    margin-bottom: 24px;
+  }
+
+  /* 색 배경 */
+  .navy-bg  { background: #0F1B3D; color: #F9F7F2; }
+  .light-bg { background: #F9F7F2; color: #1A2440; }
+
+  /* 골드 텍스트 */
+  .gold { color: #C9A961; }
+
+  /* ────────────────────── 01. 후크 ────────────────────── */
+  .hook {
+    height: 1350px;
+    padding: 150px 80px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .hook .pre {
+    font-size: 36px;
+    color: #C9A961;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    margin-bottom: 60px;
+  }
+  .hook h1 {
+    font-size: 120px;
+    font-weight: 900;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: #F9F7F2;
+  }
+  .hook .sub {
+    font-size: 40px;
+    color: #8B92A8;
+    margin-top: 90px;
+    line-height: 1.5;
+    font-weight: 500;
+  }
+
+  /* ────────────────────── 02. 메인 헤드 + hero ────────────────────── */
+  .hero {
+    height: 1500px;
+  }
+  .hero .bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 1;
+  }
+  .hero .vignette {
+    position: absolute;
+    inset: 0;
+    /* 폰 위 골드 텍스트 가독성 — 상단 60% 까지 진하게 다크 그라데이션 */
+    background: linear-gradient(180deg,
+      rgba(15, 27, 61, 0.85) 0%,
+      rgba(15, 27, 61, 0.72) 30%,
+      rgba(15, 27, 61, 0.45) 55%,
+      rgba(15, 27, 61, 0.18) 70%,
+      rgba(15, 27, 61, 0) 85%);
+    z-index: 2;
+  }
+  .hero .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    padding: 110px 80px 0;
+  }
+  .hero .overlay .section-num { color: #C9A961; }
+  .hero h2 {
+    font-size: 86px;
+    font-weight: 900;
+    line-height: 1.22;
+    color: #F9F7F2;
+    letter-spacing: -0.02em;
+  }
+  .hero h2 .plus {
+    color: #C9A961;
+    font-size: 110px;
+    display: inline-block;
+    margin: 0 4px;
+  }
+  .hero .sub {
+    font-size: 38px;
+    color: rgba(249, 247, 242, 0.85);
+    margin-top: 50px;
+    line-height: 1.5;
+    font-weight: 500;
+  }
+
+  /* ────────────────────── 03. 대비 ────────────────────── */
+  .contrast {
+    padding: 150px 80px 170px;
+  }
+  .contrast .line-grey {
+    font-size: 58px;
+    font-weight: 500;
+    color: #8B92A8;
+    line-height: 1.4;
+    margin-bottom: 60px;
+  }
+  .contrast .line-light {
+    font-size: 60px;
+    font-weight: 600;
+    color: #F9F7F2;
+    line-height: 1.4;
+    margin-bottom: 110px;
+  }
+  .contrast .stamp-wrap {
+    border-top: 2px solid #C9A961;
+    padding-top: 70px;
+  }
+  .contrast .stamp {
+    font-size: 96px;
+    font-weight: 900;
+    color: #C9A961;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+
+  /* ────────────────────── 04. 차별화 인트로 + icons ────────────────────── */
+  .pillars-intro {
+    padding: 160px 80px 120px;
+    text-align: center;
+  }
+  .pillars-intro h2 {
+    font-size: 80px;
+    font-weight: 800;
+    color: #1A2440;
+    line-height: 1.3;
+    margin-bottom: 30px;
+    letter-spacing: -0.02em;
+  }
+  .pillars-intro .sub {
+    font-size: 36px;
+    color: #6B6E78;
+    margin-bottom: 80px;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+  .pillars-intro img {
+    width: 560px;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+  }
+
+  /* ────────────────────── 05–07. 차별화 디테일 (3개) ────────────────────── */
+  .pillar {
+    padding: 140px 80px;
+  }
+  .pillar .big-num {
+    font-size: 220px;
+    font-weight: 900;
+    line-height: 1;
+    color: #C9A961;
+    opacity: 0.35;
+    margin-bottom: 30px;
+    letter-spacing: -0.05em;
+  }
+  .pillar h3 {
+    font-size: 70px;
+    font-weight: 800;
+    line-height: 1.25;
+    margin-bottom: 70px;
+    letter-spacing: -0.02em;
+  }
+  .pillar .navy-h3 { color: #F9F7F2; }
+  .pillar .light-h3 { color: #1A2440; }
+  .pillar p {
+    font-size: 44px;
+    font-weight: 500;
+    line-height: 1.55;
+  }
+  .pillar .light-p { color: #3A4358; }
+  .pillar .navy-p  { color: #C8CEE0; }
+  .pillar p strong {
+    color: #E5C77F;
+    font-weight: 700;
+  }
+
+  /* 차별화 3 — 셀러 인사이트 리스트 */
+  .insight-list {
+    margin-top: 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 50px;
+  }
+  .insight-row {
+    display: flex;
+    gap: 30px;
+    align-items: flex-start;
+    border-left: 3px solid #C9A961;
+    padding-left: 32px;
+  }
+  .insight-row .bullet {
+    display: none;
+  }
+  .insight-row p {
+    font-size: 42px;
+    font-weight: 500;
+    line-height: 1.5;
+    color: #C8CEE0;
+  }
+  .insight-row p strong {
+    color: #E5C77F;
+    font-weight: 800;
+  }
+
+  /* ────────────────────── 08. Before/After + compare ────────────────────── */
+  .compare {
+    padding: 140px 0 0;
+  }
+  .compare .heading {
+    padding: 0 80px 80px;
+  }
+  .compare .heading h2 {
+    font-size: 84px;
+    font-weight: 800;
+    color: #F9F7F2;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+  }
+  .compare .image-wrap {
+    position: relative;
+  }
+  .compare img {
+    width: 100%;
+    display: block;
+  }
+  .compare .label {
+    position: absolute;
+    font-size: 36px;
+    font-weight: 800;
+    letter-spacing: 0.25em;
+    padding: 14px 26px;
+    border-radius: 6px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .compare .label.before {
+    top: 60px;
+    left: 60px;
+    color: #B8BDD2;
+    background: rgba(15, 27, 61, 0.6);
+    border: 1px solid rgba(184, 189, 210, 0.4);
+  }
+  .compare .label.after {
+    bottom: 60px;
+    right: 60px;
+    color: #C9A961;
+    background: rgba(15, 27, 61, 0.7);
+    border: 1px solid rgba(201, 169, 97, 0.55);
+  }
+  .compare .footer {
+    padding: 100px 80px 140px;
+    font-size: 40px;
+    color: rgba(249, 247, 242, 0.8);
+    line-height: 1.5;
+    font-weight: 500;
+    text-align: center;
+  }
+
+  /* ────────────────────── 09. 받으시는 것 ────────────────────── */
+  .deliver {
+    padding: 160px 80px;
+  }
+  .deliver h2 {
+    font-size: 80px;
+    font-weight: 800;
+    color: #1A2440;
+    line-height: 1.3;
+    margin-bottom: 90px;
+    letter-spacing: -0.02em;
+  }
+  .deliver h2 .gold { color: #C9A961; }
+  .deliver ul {
+    list-style: none;
+  }
+  .deliver li {
+    font-size: 48px;
+    font-weight: 600;
+    color: #1A2440;
+    padding: 38px 0 38px 100px;
+    border-bottom: 2px solid #E5DFCE;
+    position: relative;
+    line-height: 1.4;
+  }
+  .deliver li::before {
+    content: "✓";
+    position: absolute;
+    left: 10px;
+    top: 36px;
+    color: #C9A961;
+    font-size: 60px;
+    font-weight: 900;
+  }
+  .deliver li:last-child { border-bottom: none; }
+  .deliver .flow-title {
+    margin-top: 100px;
+    font-size: 32px;
+    color: #6B6E78;
+    letter-spacing: 0.2em;
+    font-weight: 700;
+    margin-bottom: 30px;
+  }
+  .deliver .flow {
+    font-size: 38px;
+    font-weight: 700;
+    color: #1A2440;
+    line-height: 1.7;
+  }
+  .deliver .flow .arrow {
+    color: #C9A961;
+    margin: 0 14px;
+    font-weight: 900;
+  }
+
+  /* ────────────────────── 10. 마무리 ────────────────────── */
+  .closing {
+    padding: 170px 80px 190px;
+    text-align: center;
+  }
+  .closing h2 {
+    font-size: 92px;
+    font-weight: 900;
+    color: #F9F7F2;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    margin-bottom: 90px;
+  }
+  .closing h2 .gold { color: #C9A961; }
+  .closing .invite {
+    font-size: 42px;
+    font-weight: 500;
+    color: rgba(249, 247, 242, 0.85);
+    line-height: 1.6;
+    margin-bottom: 120px;
+  }
+  .closing .cta-line {
+    display: inline-block;
+    padding: 32px 56px;
+    border: 3px solid #C9A961;
+    color: #C9A961;
+    font-size: 38px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    border-radius: 4px;
+  }
+  .closing .sign {
+    margin-top: 100px;
+    font-size: 28px;
+    color: rgba(201, 169, 97, 0.7);
+    letter-spacing: 0.3em;
+    font-weight: 600;
+  }
+
+  /* 골드 디바이더 */
+  .gold-divider {
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #C9A961, transparent);
+    margin: 0;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ════════════ 01. 후크 ════════════ -->
+  <section class="hook navy-bg">
+    <div class="section-num">— 01</div>
+    <p class="pre">잠깐,</p>
+    <h1>
+      당신의<br>
+      <span class="gold">상세페이지,</span><br>
+      정말<br>
+      팔리고 있나요?
+    </h1>
+    <p class="sub">
+      예쁘지만 안 팔리는 페이지,<br>
+      이유가 있습니다.
+    </p>
+  </section>
+
+  <!-- ════════════ 02. 메인 헤드 + hero ════════════ -->
+  <section class="hero">
+    <img class="bg" src="./img/hero.png" alt="">
+    <div class="vignette"></div>
+    <div class="overlay">
+      <div class="section-num">— 02</div>
+      <h2>
+        현직 셀러가<br>
+        만드는<br>
+        <span class="gold">상품 이미지</span><br>
+        <span class="plus">+</span><br>
+        <span class="gold">상세페이지</span>
+      </h2>
+      <p class="sub">
+        팔아본 사람의 디테일,<br>
+        한 번에.
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════════ 03. 대비 ════════════ -->
+  <section class="contrast navy-bg">
+    <div class="section-num">— 03</div>
+    <p class="line-grey">
+      디자이너는<br>
+      예쁘게 만듭니다.
+    </p>
+    <p class="line-light">
+      하지만,<br>
+      팔아본 적은<br>
+      없습니다.
+    </p>
+    <div class="stamp-wrap">
+      <p class="stamp">
+        저는<br>
+        사장입니다.
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════════ 04. 차별화 인트로 + icons ════════════ -->
+  <section class="pillars-intro light-bg">
+    <div class="section-num">— 04</div>
+    <h2>
+      왜<br>
+      <span class="gold">셀러 출신</span>인가
+    </h2>
+    <p class="sub">
+      세 가지가 다릅니다.
+    </p>
+    <img src="./img/icons.png" alt="">
+  </section>
+
+  <!-- ════════════ 05. 차별화 1 ════════════ -->
+  <section class="pillar navy-bg">
+    <div class="big-num">01</div>
+    <h3 class="navy-h3">
+      셀러의<br>
+      <span class="gold">눈</span>으로<br>
+      봅니다.
+    </h3>
+    <p class="navy-p">
+      어떤 이미지가<br>
+      <strong>클릭</strong>을 부르는지.<br><br>
+      어디서 고객이<br>
+      <strong>이탈</strong>하는지.<br><br>
+      직접 팔면서 본 패턴을<br>
+      그대로 적용합니다.
+    </p>
+  </section>
+
+  <div class="gold-divider"></div>
+
+  <!-- ════════════ 06. 차별화 2 ════════════ -->
+  <section class="pillar light-bg">
+    <div class="big-num">02</div>
+    <h3 class="light-h3">
+      <span class="gold">한 사람</span>이<br>
+      처음부터<br>
+      끝까지.
+    </h3>
+    <p class="light-p">
+      디자이너 따로,<br>
+      카피라이터 따로,<br>
+      코더 따로<br>
+      발주하지 않습니다.<br><br>
+      한 사람이<br>
+      <strong>일관된 메시지</strong>를<br>
+      처음부터 끝까지.
+    </p>
+  </section>
+
+  <div class="gold-divider"></div>
+
+  <!-- ════════════ 07. 차별화 3 ════════════ -->
+  <section class="pillar navy-bg">
+    <div class="big-num">03</div>
+    <h3 class="navy-h3">
+      <span class="gold">파는 사람</span>만<br>
+      아는 디테일.
+    </h3>
+    <div class="insight-list">
+      <div class="insight-row">
+        <span class="bullet">·</span>
+        <p>
+          단점을 어떻게 말해야<br>
+          <strong>신뢰</strong>가 늘어나는지.
+        </p>
+      </div>
+      <div class="insight-row">
+        <span class="bullet">·</span>
+        <p>
+          배송 안내를 어디 둬야<br>
+          <strong>환불 요청</strong>이 줄어드는지.
+        </p>
+      </div>
+      <div class="insight-row">
+        <span class="bullet">·</span>
+        <p>
+          어떤 컷이<br>
+          <strong>리뷰 사진</strong>으로 올라오는지.
+        </p>
+      </div>
+    </div>
+    <p class="navy-p" style="margin-top: 80px;">
+      전부<br>
+      <strong>직접 팔면서</strong> 배웠습니다.
+    </p>
+  </section>
+
+  <!-- ════════════ 08. Before/After + compare ════════════ -->
+  <section class="compare navy-bg">
+    <div class="section-num" style="padding: 0 80px 30px;">— 05</div>
+    <div class="heading">
+      <h2>
+        이 차이가<br>
+        <span class="gold">고객 반응</span>의<br>
+        차이입니다.
+      </h2>
+    </div>
+    <div class="image-wrap">
+      <img src="./img/compare.png" alt="">
+      <div class="label before">BEFORE</div>
+      <div class="label after">AFTER</div>
+    </div>
+    <p class="footer">
+      어떤 페이지가<br>
+      사장님 상품의 매력을<br>
+      더 보여줄까요.
+    </p>
+  </section>
+
+  <!-- ════════════ 09. 받으시는 것 ════════════ -->
+  <section class="deliver light-bg">
+    <div class="section-num">— 06</div>
+    <h2>
+      한 번 의뢰하시면<br>
+      <span class="gold">받으시는 것</span>
+    </h2>
+    <ul>
+      <li>상품 이미지 기획서</li>
+      <li>메인 컷 + 디테일 5컷</li>
+      <li>한국어 카피 풀세트</li>
+      <li>상세페이지 HTML</li>
+      <li>1차 작업 후 1회 수정</li>
+    </ul>
+    <p class="flow-title">— 작업 흐름</p>
+    <p class="flow">
+      브리핑 <span class="arrow">→</span> 기획<br>
+      <span class="arrow">→</span> 시안 <span class="arrow">→</span> 카피<br>
+      <span class="arrow">→</span> 조립 <span class="arrow">→</span> 전달
+    </p>
+  </section>
+
+  <!-- ════════════ 10. 마무리 ════════════ -->
+  <section class="closing navy-bg">
+    <div class="section-num">— 07</div>
+    <h2>
+      직접<br>
+      <span class="gold">팔아본 사람</span>에게<br>
+      맡기세요.
+    </h2>
+    <p class="invite">
+      상품 정보 한 줄만 주세요.<br>
+      첫 답변, 드립니다.
+    </p>
+    <div class="cta-line">
+      크몽 메시지로 문의
+    </div>
+    <p class="sign">
+      dehayoung
+    </p>
+  </section>
+
+</div>
+</body>
+</html>

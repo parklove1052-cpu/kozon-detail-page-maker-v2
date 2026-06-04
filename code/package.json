@@ -1,0 +1,19 @@
+{
+  "name": "kozon-detail-page-maker",
+  "version": "0.5.5",
+  "description": "코존코리아 상세페이지 제작 로컬 도구 (Claude CLI 호출 방식)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "playwright": "^1.50.0",
+    "sharp": "^0.33.5",
+    "archiver": "^7.0.1"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "port": 7777,
+  "host": "127.0.0.1",
+  "cwd_source": "design",
+  "default_style": "premium",
+  "default_content_style": "info",
+  "styles": {
+    "premium": {
+      "label": "프리미엄",
+      "description": "고급스러운 톤, 다크 컬러, 세리프 폰트, 여백 풍부",
+      "domain_path": "C:\\Users\\MYCOM\\Documents\\조현준편집파일 329부터\\클로드코드\\코존워크스페이스\\domains\\상세페이지 제작자"
+    },
+    "casual": {
+      "label": "캐주얼",
+      "description": "밝고 활기찬 톤, 산세리프, 컬러풀",
+      "domain_path": "C:\\Users\\MYCOM\\Documents\\조현준편집파일 329부터\\클로드코드\\코존워크스페이스\\domains\\상세페이지 제작자"
+    },
+    "minimal": {
+      "label": "미니멀",
+      "description": "여백 위주, 깔끔, 흑백 + 1 포인트 컬러",
+      "domain_path": "C:\\Users\\MYCOM\\Documents\\조현준편집파일 329부터\\클로드코드\\코존워크스페이스\\domains\\상세페이지 제작자"
+    },
+    "modern": {
+      "label": "모던",
+      "description": "강한 타이포그래피, 그라데이션, 컨템퍼러리",
+      "domain_path": "C:\\Users\\MYCOM\\Documents\\조현준편집파일 329부터\\클로드코드\\코존워크스페이스\\domains\\상세페이지 제작자"
+    }
+  },
+  "content_styles": {
+    "emotional": {
+      "label": "감성형",
+      "description": "스토리텔링 중심, 감각적·서정적 표현, 일상의 변화를 그려냄",
+      "domain_path": "C:\\Users\\MYCOM\\Documents\\조현준편집파일 329부터\\클로드코드\\코존워크스페이스\\domains\\상세페이지 제작자"
+    },
+    "info": {
+      "label": "정보형",
+      "description": "스펙·기능·근거 중심, 객관적·논리적 톤",
+      "domain_path": "C:\\Users\\MYCOM\\Documents\\조현준편집파일 329부터\\클로드코드\\코존워크스페이스\\domains\\상세페이지 제작자"
+    },
+    "benefit": {
+      "label": "혜택형",
+      "description": "가격·할인·이벤트·보증 강조, 구매 동기 부각",
+      "domain_path": "C:\\Users\\MYCOM\\Documents\\조현준편집파일 329부터\\클로드코드\\코존워크스페이스\\domains\\상세페이지 제작자"
+    },
+    "friendly": {
+      "label": "친근형",
+      "description": "대화체, 친구톤, 진입장벽 낮춤",
+      "domain_path": "C:\\Users\\MYCOM\\Documents\\조현준편집파일 329부터\\클로드코드\\코존워크스페이스\\domains\\상세페이지 제작자"
+    }
+  },
+  "extractor_domain_path": "C:\\Users\\MYCOM\\Documents\\조현준편집파일 329부터\\클로드코드\\코존워크스페이스\\domains\\상세페이지 제작자",
+  "claude_timeout_ms": 360000,
+  "max_image_size_mb": 20,
+  "max_total_images": 30,
+  "higgsfield_mode": "claude",
+  "higgsfield_mode_choices": ["claude", "cli", "auto"],
+  "higgsfield_mode_comment": "claude: Claude CLI에 Higgsfield 플러그인/MCP 위임 (사장님 PC 기본). cli: 글로벌 higgsfield CLI 직접 spawn. auto: cli 먼저, 실패 시 claude 폴백.",
+  "higgsfield_dry_check": true,
+  "higgsfield_dry_check_comment": "true: generate-png 직전 짧은 dry-run으로 Claude 세션에 Higgsfield MCP가 노출돼 있는지 사전 확인. false: 사전 점검 생략 (11슬롯 비싸게 돌고 다 실패하는 사고 위험)."
+}

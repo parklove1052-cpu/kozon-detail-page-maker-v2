@@ -1,0 +1,187 @@
+{
+  "key": "kwayeon",
+  "label": "과연 (크몽 베스트셀러)",
+  "platform": "크몽",
+  "url": "https://kmong.com/@%EA%B3%BC%EC%97%B0",
+  "tagline": "판매로 이어지는 효과적인 상세페이지 — 카테고리 적응형 디자인",
+  "source_notes": [
+    "별점 4.9 / 리뷰 2,261+ (2026-05 기준)",
+    "사장님 직접 제공 작품 3건으로 결 확정:",
+    "  · portfolio/view/171340 — 미용·뷰티(보형물), 핫핑크, 다채로운·사랑스러운·섬세한",
+    "  · portfolio/view/166830 — 음료·식품(콤부차), 주황, 유쾌한·다채로운·역동적인",
+    "  · portfolio/view/166821 — IT·마케팅(블로그), 보라, 단순한·진지한",
+    "공통 결: Pretendard 산세리프 / 카테고리 적응 컬러 / 둥근 카드 반복 / 해시태그·번호 인덱스 / 3D·일러스트·이모지 활용"
+  ],
+  "design_tokens": {
+    "palette": {
+      "primary": "(카테고리별 적응 — 아래 category_palettes 참조. default는 #1F6BFF)",
+      "secondary": "(카테고리별 적응. default는 #5C95FF)",
+      "background": "#FFFFFF (또는 카테고리에 따라 다크: #1A0F33 등)",
+      "accent": "(카테고리별. default는 #FF6FA3 핫핑크)",
+      "muted": "#F4F7FB"
+    },
+    "palette_strategy": "adaptive — 제품 카테고리에 맞춰 메인 컬러 1개 + 보조 1개 선정. 화이트/뉴트럴 50~70% + 메인 컬러 25~40% + 보조 5~15%",
+    "category_palettes": {
+      "뷰티_여성_미용": { "main": "#E2007A", "main_soft": "#FF7AB3", "background": "#FFFFFF", "accent": "#FFD7E8", "text_dark": "#1A1A1A" },
+      "음료_식품_건강": { "main": "#F5882A", "main_soft": "#FFB371", "background": "#FFF7EE", "accent": "#FFE3C7", "text_dark": "#2B1700" },
+      "IT_마케팅_서비스": { "main": "#6E4BD9", "main_soft": "#9D7BFF", "background": "#1A0F33", "accent": "#FF6FA3", "text_light": "#FFFFFF" },
+      "전자_가전_생활": { "main": "#1F6BFF", "main_soft": "#5C95FF", "background": "#F4F7FB", "accent": "#FFA940", "text_dark": "#0F1A2E" },
+      "패션_의류": { "main": "#0A0A0A", "main_soft": "#3A3A3A", "background": "#F7F5F1", "accent": "#C9A961", "text_dark": "#0A0A0A" },
+      "default": { "main": "#1F6BFF", "main_soft": "#5C95FF", "background": "#FFFFFF", "accent": "#FF6FA3", "text_dark": "#1A1A1A" }
+    },
+    "palette_rule": "사장님 카피에서 제품 카테고리를 추론 → 위 category_palettes 에서 가장 가까운 항목 1개 선택 → 그 hex 값을 CSS 변수로 그대로 사용",
+    "fonts": {
+      "headline": "Pretendard ExtraBold/Black (800~900)",
+      "body": "Pretendard Regular/Medium (400~500)",
+      "caption": "Pretendard Medium (500)",
+      "label_en": "Pretendard Medium (500) — 대문자 + letter-spacing 0.1em (예: PERFORMANCE, NEW, OEM)",
+      "weight_strategy": "헤드는 무거운 무게(800-900)로 임팩트, 본문은 Regular로 가독성, 영문 라벨은 작고 명확하게",
+      "cdn": [
+        "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css"
+      ],
+      "note": "명조(MaruBuri/Noto Serif) 사용 금지. 과연은 산세리프 단일."
+    },
+    "size_scale": {
+      "h1_px": 110,
+      "h2_px": 64,
+      "h3_px": 44,
+      "body_px": 34,
+      "caption_px": 24,
+      "h1_hero_px": 110,
+      "h1_section_px": 80,
+      "h3_card_title_px": 44,
+      "sub_body_px": 30,
+      "label_en_px": 22,
+      "price_hero_px": 160,
+      "note": "1000px 캔버스 기준. 가격·핵심 숫자(예: 1100, 4가지)는 매우 크게(140~180px). 헤드는 무거운 무게(800-900)."
+    },
+    "spacing": {
+      "section_padding_y_px": 120,
+      "section_padding_x_px": 60,
+      "block_gap_px": 60,
+      "card_padding_px": 36,
+      "card_gap_px": 24
+    },
+    "shape": {
+      "corner_radius_px": 20,
+      "card_corner_radius_px": 24,
+      "button_corner_radius_px": 999,
+      "divider": "둥근 박스 카드로 구분 (1px 라인 X). 인덱스 라인 쓸 때는 메인 컬러 4-6px 두께 짧은 라인(80~120px)"
+    }
+  },
+  "tone": ["다채로운", "역동적", "친근한", "명료한", "신뢰감 있는", "카테고리 적응"],
+  "tone_style_mapping": {
+    "뷰티": ["다채로운", "사랑스러운", "섬세한"],
+    "음료_식품": ["유쾌한", "다채로운", "역동적인"],
+    "IT_마케팅": ["단순한", "진지한", "전문적인"],
+    "전자_생활": ["깔끔한", "역동적인", "신뢰감"],
+    "default": ["다채로운", "친근한", "명료한"]
+  },
+  "copy_lexicon": [
+    "약속", "함께", "솔루션", "테크니컬", "인증", "OEM", "FDA승인", "특허",
+    "NEW", "PERFORMANCE", "와 함께", "을 위한", "에 적합한",
+    "맞춤형", "확실한", "사전", "책임지는", "전문",
+    "최적의", "최고의", "최상의", "효과적인",
+    "함께합니다", "약속드립니다", "제공합니다", "해드립니다"
+  ],
+  "copy_patterns": [
+    "헤드 한 줄 + 부제 1~2줄 + 본문 단락(가독성 우선)",
+    "병렬 구조 반복: `행복을 함께합니다 / 라이프스타일을 함께합니다 / 문화를 함께합니다` 같이 동일 어구 3-4회",
+    "카드 라벨 + 본문 (예: `맞춤형 서비스 제공` / `확실한 지수·공감 관리` / `사전 블로그 점검 및 피드백`)",
+    "신뢰 신호: 인증(FDA/특허), 경력(20년), 제휴(존슨앤존슨), 수치(4가지/3단계)",
+    "해시태그 활용: `#FDA승인 #리플링없음 #이벤트` 또는 `#따뜻하게 #시원하게 #스파클링하게`",
+    "영문 보조 라벨: PERFORMANCE / NEW / OEM / TM 등 작게 위에 + 한국어 본문 아래에"
+  ],
+  "copy_dont": [
+    "감성/문학적 표현(원조·명품·정성·디테일·감각) — 과연은 명료·정보 우선",
+    "할인·재고압박 호객 카피",
+    "위협·공포 마케팅",
+    "비교광고식 단정 (X사 vs 우리)"
+  ],
+  "image_direction": {
+    "lighting": "vivid product photography with bright clean studio lighting, occasional dynamic splash/motion (음료처럼 다이내믹), or 3D illustration with bright gradient lighting",
+    "palette": "category-adaptive: 뷰티=hot pink/coral/peach, 음료/식품=warm orange/yellow/green vivid, IT=deep purple/navy with neon accents, 전자=clean blue/white. Never muted/sepia.",
+    "background": "solid main color OR product on white with bold color accent OR gradient (purple/navy gradient for IT). Often phone mockup integrated.",
+    "mood": "dynamic, vibrant, friendly, confident — magazine ad photography style not editorial still life",
+    "framing": "제품 또는 메인 비주얼을 화면 중앙~50% 영역, 그 위·아래에 큰 헤드라인 + 해시태그/번호 인덱스",
+    "aspect_preference": "1:1 메인 컷 + 본문은 세로 (3:5~3:7 긴 비율) — 자유롭게",
+    "elements": [
+      "phone mockup (제품 화면을 폰 안에 표시)",
+      "3D 아이콘 (메가폰/돋보기/엄지 등 — IT/서비스에 자주)",
+      "일러스트 (사람·식물·라이프스타일 — 음료/식품에 자주)",
+      "둥근 모서리 카드(radius 20-24px)",
+      "큰 번호 인덱스 (01/02/03 — 동그라미 또는 큰 숫자)",
+      "해시태그 그룹",
+      "영문 라벨(PERFORMANCE/NEW) 작게"
+    ]
+  },
+  "section_pattern": [
+    {
+      "n": 1,
+      "name": "Hero — 임팩트 헤드 + 제품/메인비주얼",
+      "note": "큰 헤드(100~130px Black) + 부제 1줄(36px) + 해시태그 3~5개. 제품 사진 또는 일러스트 큰 컷. 메인 컬러 배경."
+    },
+    {
+      "n": 2,
+      "name": "트러스트 신호 — 인증/경력/제휴",
+      "note": "FDA·존슨앤존슨·20년 경력·특허·실적 등 신뢰 카드. 가로 3컷 (모바일이라 약간 콤팩트) 또는 세로 stack."
+    },
+    {
+      "n": 3,
+      "name": "페인포인트 또는 핵심 약속",
+      "note": "`4가지 약속` 같은 큰 헤드 + 부제 (왜 필요한가). 다음 섹션 인덱스 안내."
+    },
+    {
+      "n": 4,
+      "name": "USP 카드 반복 (3~5장)",
+      "note": "둥근 박스 카드 N장. 각 카드: [라벨/번호] + [한 줄 제목] + [본문 1~2단락] + [작은 아이콘 또는 일러스트]. 병렬 구조."
+    },
+    {
+      "n": 5,
+      "name": "사용 시나리오 또는 정보 그래픽",
+      "note": "일러스트로 사용 흐름 또는 비교/단계 보여주기. 음료=라이프스타일 컷, IT=프로세스 다이어그램."
+    },
+    {
+      "n": 6,
+      "name": "스펙·디테일 (필요 시)",
+      "note": "표 또는 박스로 간결하게. 너무 길면 X."
+    },
+    {
+      "n": 7,
+      "name": "명확 CTA — 구매·문의·가격",
+      "note": "큰 가격 숫자(140~180px) 또는 큰 버튼. `지금 구매` `문의하기` 같은 명확한 액션. 잔잔 클로징 X."
+    }
+  ],
+  "do_dont": {
+    "do": [
+      "둥근 박스 카드로 정보 묶기 (radius 20-24px)",
+      "병렬 구조 반복으로 리듬 만들기",
+      "메인 컬러 1개를 큰 면적에 과감하게 사용",
+      "큰 번호/숫자로 시선 끌기",
+      "해시태그와 영문 라벨로 톤 강조",
+      "본문 행간 1.5~1.6 (감성보다 짧음 — 정보 밀도 중간)",
+      "한 화면 한 핵심 메시지 + 보조 1~2개 OK",
+      "이모지·3D 아이콘 적극 활용 (다채로운 결)"
+    ],
+    "dont": [
+      "명조 폰트 사용 (Noto Serif/MaruBuri 금지)",
+      "그레이/베이지/세피아 같은 톤다운 무드",
+      "잔잔한 매거진 화보 결",
+      "1px divider 라인으로 정보 구분",
+      "본문 행간 1.7+ 호흡감 (너무 잔잔함)",
+      "할인·압박 카피",
+      "위협·공포 마케팅"
+    ]
+  },
+  "image_prompt_overrides": {
+    "lighting": "bright clean commercial product photography lighting, vivid and energetic, with optional dynamic splash motion or 3D-rendered illustration lighting",
+    "palette": "category-adaptive saturated colors — for beauty use hot pink and coral, for food/drink use warm orange and golden yellow, for IT/service use deep purple navy with neon accents. Never use muted gray, sepia, or warm beige editorial tones.",
+    "background": "bold solid color background matching product category, OR clean white with strong color accent, OR vibrant gradient. Often a smartphone mockup contains the product visual.",
+    "mood": "dynamic, vibrant, friendly, confident commercial ad style — not muted editorial still life"
+  },
+  "related_meta": {
+    "samples_local": "benchmarks/kwayeon_samples/  (사장님 제공 3작품 다운로드 — 171340 beauty / 166830 drink / 166821 blog)",
+    "deep_dive_report": "benchmarks/kwayeon_deep_dive.md (사장님 직접 캡처 반영 전 버전 — 참고)",
+    "previous_wrong_spec": "references/_archive/kwayeon_v1_wrong_premium_serif.json (잘못 잡았던 감성·프리미엄·마루부리 결 — 사장님 첫 sales 페이지 작업 컨텍스트로만 보존)"
+  }
+}

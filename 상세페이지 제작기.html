@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- v0.7.9 강력 캐시 무력화 + 백업 redirect (JS 비활성 케이스에도 작동) -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta http-equiv="refresh" content="2; url=http://127.0.0.1:7777/index.html" />
+  <title>코존 · 상세페이지 제작기</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛍️</text></svg>" />
+  <style>
+    html, body { margin: 0; height: 100vh; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif; background: #05060a; color: #e8ecf4; }
+    #offline {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      padding: 32px;
+      text-align: center;
+      gap: 18px;
+    }
+    #offline.show { display: flex; }
+    #offline h1 { font-size: 28px; font-weight: 900; letter-spacing: -.02em; color: #ff4d6d; margin: 0; }
+    #offline .icon { font-size: 64px; filter: drop-shadow(0 0 18px rgba(255, 77, 109, .5)); }
+    #offline .msg { max-width: 640px; font-size: 15px; line-height: 1.7; color: #b4bccb; }
+    #offline code { background: #11141d; color: #00f0ff; padding: 2px 8px; border-radius: 4px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; border: 1px solid #1d2433; }
+    #offline .path { background: #0b0e16; border: 1px solid #1d2433; border-radius: 8px; padding: 14px 18px; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; color: #6b7280; max-width: 760px; word-break: break-all; }
+    #offline .steps { background: #0b0e16; border: 1px solid #1d2433; border-radius: 8px; padding: 16px 22px; max-width: 640px; text-align: left; counter-reset: stp; }
+    #offline .steps li { list-style: none; padding: 6px 0 6px 32px; position: relative; font-size: 14px; color: #b4bccb; line-height: 1.55; counter-increment: stp; }
+    #offline .steps li::before { content: counter(stp); position: absolute; left: 0; top: 8px; width: 22px; height: 22px; border-radius: 50%; background: #00f0ff; color: #001018; font-size: 12px; font-weight: 800; display: grid; place-items: center; }
+    #offline button { padding: 12px 28px; font-size: 14px; font-weight: 700; background: linear-gradient(135deg, #00f0ff, #ff2bd1); color: #001018; border: 0; border-radius: 8px; cursor: pointer; font-family: inherit; box-shadow: 0 0 18px rgba(0, 240, 255, .35); }
+    #offline button:hover { transform: translateY(-1px); box-shadow: 0 4px 24px rgba(0, 240, 255, .5); }
+    #offline .auto { font-size: 12px; color: #6b7280; }
+
+    #boot { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 14px; }
+    #boot .spinner { width: 48px; height: 48px; border: 3px solid #1d2433; border-top-color: #00f0ff; border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #boot .msg { color: #6b7280; font-size: 13px; }
+
+    /* build 식별자 — 사장님이 화면에서 즉시 어느 버전인지 확인 가능 */
+    #build-tag {
+      position: fixed; bottom: 8px; right: 12px;
+      font-family: 'Consolas', monospace; font-size: 10px;
+      color: #6b7280; opacity: .55;
+      pointer-events: none; z-index: 9999;
+    }
+
+    #fallback { display: none; padding: 32px; line-height: 1.6; }
+    #fallback.show { display: block; }
+  </style>
+</head>
+<body>
+  <!-- 진입 즉시 health probe 중 spinner -->
+  <div id="boot">
+    <div class="spinner"></div>
+    <div class="msg" id="boot-msg">서버 연결 확인 중…</div>
+  </div>
+
+  <!-- build 식별자 — 캐시 진단용. 사장님이 화면에서 즉시 어느 버전인지 보입니다. -->
+  <div id="build-tag">v0.7.9 · 2026-06-03 22:30</div>
+
+  <!-- 서버 OFF 시 친화 안내 화면 -->
+  <div id="offline">
+    <div class="icon">⚠</div>
+    <h1>서버가 꺼져 있습니다</h1>
+    <div class="msg">
+      이 도구를 사용하려면 <b>로컬 서버</b>가 떠 있어야 합니다 (Claude CLI 호출용).<br>
+      아래 파일을 더블클릭해 주세요.
+    </div>
+    <div class="path" id="path-info">경로 확인 중…</div>
+    <div class="msg" style="background:rgba(0,240,255,.08); border:1px solid #00f0ff; padding:14px 18px; border-radius:8px; max-width:640px;">
+      💡 <b>한 번만 「서버 자동시작 등록.bat」 더블클릭하면 평생 자동입니다.</b><br>
+      Windows 부팅(로그인)할 때마다 서버가 자동으로 떠 있어서, 앞으로는 이 페이지를 더블클릭하면 바로 본 UI가 뜹니다.<br>
+      해제하고 싶으면 「서버 자동시작 해제.bat」 더블클릭.
+    </div>
+    <ol class="steps">
+      <li>도메인 폴더의 <code>서버 자동시작 등록.bat</code> 더블클릭 (최초 1회) — 부팅마다 서버 자동 시작 등록<br>또는 지금만 띄우려면 <code>code/start_hidden.vbs</code> 더블클릭 (단발성)<br>또는 콘솔 에러를 보고 싶으면 <code>서버 재시작.bat</code></li>
+      <li>서버가 떴다는 응답이 오면 (보통 5~10초)</li>
+      <li>이 페이지가 자동으로 본 UI로 전환됩니다 (3초마다 자동 재시도 중)</li>
+    </ol>
+    <button id="retry-btn" type="button">지금 다시 확인</button>
+    <div class="auto" id="auto-status">자동 재시도 대기 중…</div>
+  </div>
+
+  <noscript>
+    <div id="fallback" class="show">
+      <h2>코존 상세페이지 제작기</h2>
+      <p>JavaScript 가 차단되어 있어 직접 진입해 주세요:</p>
+      <p><a href="./code/public/index.html">./code/public/index.html</a></p>
+    </div>
+  </noscript>
+
+  <script>
+    'use strict';
+    // ════════════════════════════════════════════════════════════════
+    //  v0.7.8 — iframe 폐기 + 자체 redirect 패턴
+    //  · file:// 부모 + http:// 자식 iframe cross-origin이 drag-drop 차단해서 폐기
+    //  · 서버 OK → window.location.replace로 http://127.0.0.1:7777/index.html로 자체 이동
+    //    → 모든 게 동일 origin (http://127.0.0.1:7777) → drag-drop · 캐시 무효화 · 모든 기능 정상
+    //  · 서버 OFF → 현재 페이지에 fallback 안내 표시 + 자동 재시도
+    // ════════════════════════════════════════════════════════════════
+    var SERVER_URL = 'http://127.0.0.1:7777';
+    var HEALTH_URL = SERVER_URL + '/api/health';
+    var TARGET_URL = SERVER_URL + '/index.html';
+
+    var bootEl    = document.getElementById('boot');
+    var bootMsg   = document.getElementById('boot-msg');
+    var offline   = document.getElementById('offline');
+    var pathEl    = document.getElementById('path-info');
+    var autoEl    = document.getElementById('auto-status');
+    var retryBtn  = document.getElementById('retry-btn');
+
+    // 도메인 폴더 경로 추정 (file:// 컨텍스트일 때만 의미 있음)
+    try {
+      if (location.protocol === 'file:') {
+        var href = decodeURIComponent(location.href);
+        var m = href.match(/^file:\/\/\/(.*?)\/상세페이지 제작기\.html/i);
+        if (m && m[1]) {
+          pathEl.textContent = '도메인 폴더: ' + m[1].replace(/\//g, '\\');
+        } else {
+          pathEl.textContent = '도메인 폴더: ' + href.replace(/\/상세페이지 제작기\.html.*$/i, '').replace(/^file:\/\/\//, '').replace(/\//g, '\\');
+        }
+      } else {
+        pathEl.textContent = '';
+      }
+    } catch (_) { pathEl.textContent = ''; }
+
+    var probeInflight = false;
+    var retryCount = 0;
+    var redirected = false;
+
+    function showOffline() {
+      bootEl.style.display = 'none';
+      offline.classList.add('show');
+    }
+    function showBoot() {
+      offline.classList.remove('show');
+      bootEl.style.display = 'flex';
+    }
+
+    async function probe() {
+      if (probeInflight || redirected) return;
+      probeInflight = true;
+      try {
+        var ctrl = new AbortController();
+        var tid = setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, 1500);
+        var resp = await fetch(HEALTH_URL, { signal: ctrl.signal, cache: 'no-store' });
+        clearTimeout(tid);
+        if (!resp.ok) throw new Error('status ' + resp.status);
+        // 서버 OK → http://127.0.0.1:7777/index.html 로 자체 이동
+        // 동일 origin이 되므로 drag-drop · clipboard · 캐시 무효화 모두 정상
+        redirected = true;
+        bootMsg.textContent = '서버 OK — 본 UI로 이동…';
+        window.location.replace(TARGET_URL);
+      } catch (err) {
+        showOffline();
+      } finally {
+        probeInflight = false;
+      }
+    }
+
+    function startAutoRetry() {
+      setInterval(function () {
+        if (redirected) return;
+        retryCount += 1;
+        autoEl.textContent = '자동 재시도 #' + retryCount + ' · ' + new Date().toLocaleTimeString('ko-KR');
+        probe();
+      }, 3000);
+    }
+
+    retryBtn.addEventListener('click', function () {
+      autoEl.textContent = '수동 확인 중…';
+      showBoot();
+      probe();
+    });
+
+    probe();
+    startAutoRetry();
+  </script>
+</body>
+</html>

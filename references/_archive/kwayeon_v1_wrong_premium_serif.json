@@ -1,0 +1,131 @@
+{
+  "key": "kwayeon",
+  "label": "과연 (크몽 베스트셀러)",
+  "platform": "크몽",
+  "url": "https://kmong.com/@%EA%B3%BC%EC%97%B0",
+  "tagline": "판매로 이어지는 효과적인 상세페이지 — 기획·촬영·디자인 올인원",
+  "source_notes": [
+    "별점 4.9 / 리뷰 2,279개 (2026-05-14 기준)",
+    "주력 서비스명: 판매로 이어지는 효과적인 상세페이지 디자인",
+    "분야: UI/UX, 인쇄·홍보물, 책표지·내지, 사진편집·리터칭, 상세페이지",
+    "기획 + 촬영 + 디자인 올인원 (작가 본인이 한 사람으로 일관 진행)",
+    "공개 포트폴리오 예: 빌티니 TV스탠드 — '원조이자 명품' 프리미엄 포지셔닝",
+    "공통 인상: 감성적·섬세, 그레이/뉴트럴 기반, 명품·원조 어휘 활용"
+  ],
+  "design_tokens": {
+    "palette": {
+      "primary": "#2A2A2A",
+      "secondary": "#8C8C8C",
+      "background": "#F2F2F0",
+      "accent": "#C9A961",
+      "muted": "#B8B5AE"
+    },
+    "fonts": {
+      "headline": "MaruBuri SemiBold/Bold (700~800)",
+      "body": "MaruBuri Regular (400) 또는 Pretendard 400-500",
+      "caption": "MaruBuri Light (300) 또는 Pretendard 300",
+      "weight_strategy": "헤드라인 SemiBold/Bold 명조 / 본문 Regular 명조 또는 Pretendard / 캡션 Light",
+      "cdn": [
+        "https://cdn.jsdelivr.net/gh/fonts-archive/MaruBuri/MaruBuri.css",
+        "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css"
+      ],
+      "local_files": [
+        "fonts/MaruBuri/MaruBuri-Regular.otf",
+        "fonts/MaruBuri/MaruBuri-SemiBold.otf",
+        "fonts/MaruBuri/MaruBuri-Bold.otf"
+      ],
+      "note": "마루 부리는 네이버 한글한글아름답게 OFL — 과연이 자주 쓰는 결의 본문 명조와 가장 유사. 큰 슬로건엔 우아한 세리프(GraceSerif) 도 옵션."
+    },
+    "size_scale": {
+      "h1_px": 120,
+      "h2_px": 92,
+      "h3_px": 70,
+      "body_px": 44,
+      "caption_px": 30
+    },
+    "spacing": {
+      "section_padding_y_px": 160,
+      "section_padding_x_px": 80,
+      "block_gap_px": 80
+    },
+    "shape": {
+      "corner_radius_px": 0,
+      "divider": "1px solid #2A2A2A 또는 #8C8C8C, 짧은 인덱스 라인 (60~80px)"
+    }
+  },
+  "tone": ["감성적", "섬세함", "프리미엄", "정제됨", "확신"],
+  "copy_lexicon": [
+    "원조", "명품", "프리미엄", "정성", "디테일", "감각", "그 차이",
+    "한 사람의 손에서", "기획부터 마감까지", "오랜 시간 다듬어진", "남기는 것"
+  ],
+  "copy_dont": [
+    "할인/세일 호객 카피", "이모지 남발", "느낌표 3개 이상", "TMI 정보 나열",
+    "비교광고식 단정 (X사 vs 우리)", "위협/공포 마케팅"
+  ],
+  "image_direction": {
+    "lighting": "soft moody studio lighting with warm rim accent, large soft key from upper-left, gentle controlled shadow on opposite side",
+    "palette": "muted warm gray, ivory, taupe, with subtle warm amber or gold reflections — no neon, no high-saturation",
+    "background": "minimal solid backdrop (warm gray / ivory) or refined natural texture (linen, washed concrete, warm wood) — never busy",
+    "mood": "감성적·섬세·프리미엄, editorial still life, 광고 사진보다는 매거진 화보 결",
+    "framing": "여백 풍부, 제품을 화면 30~40% 이내로, 위/아래 음의 공간 충분",
+    "aspect_preference": "2:3 또는 3:4 세로 우선 (모바일 스크롤 가독성)"
+  },
+  "section_pattern": [
+    {
+      "n": 1,
+      "name": "Hero — 슬로건 한 줄",
+      "note": "제품 풀샷 + 짧은 슬로건 1줄 (서체 강조). 화면 중앙 정렬, 위/아래 100~140px 패딩"
+    },
+    {
+      "n": 2,
+      "name": "스토리 — 원조/철학",
+      "note": "왜 이 제품인가. 브랜드 가치/원조성/제작자 의도. 1단락 + 인덱스 라인"
+    },
+    {
+      "n": 3,
+      "name": "디테일 클로즈업 3컷",
+      "note": "재질·마감·디테일을 클로즈업 컷 3장 세로 stack. 각 컷 하단에 한 줄 캡션"
+    },
+    {
+      "n": 4,
+      "name": "사용 시나리오 — 공간 연출",
+      "note": "실제 사용 공간(거실/책상/현관)에서의 컷. 일상의 정제된 순간"
+    },
+    {
+      "n": 5,
+      "name": "스펙 — 정제된 표",
+      "note": "절제된 표(인쇄 매뉴얼 결). 항목 좌측 정렬, 값 우측 정렬, 가로선 1px"
+    },
+    {
+      "n": 6,
+      "name": "감각 클로징 — 한 줄 마무리",
+      "note": "마지막은 카피 한 줄 + 제품 풀샷 또는 사인. CTA는 본문 안 강조보다는 페이지 끝 잔잔하게"
+    }
+  ],
+  "do_dont": {
+    "do": [
+      "본문 행간 1.7 이상 — 호흡감",
+      "한 화면 = 한 메시지",
+      "골드/탄 컬러는 강조 1곳에만",
+      "캡션은 본문보다 작게, 색상은 회색 톤다운",
+      "이미지 위 텍스트는 제품을 가리지 않게 반대편 빈 공간에"
+    ],
+    "dont": [
+      "원색·네온·파스텔 남발",
+      "동시에 3가지 이상 메시지 보여주기",
+      "할인·재고 압박 배지",
+      "두꺼운 박스/그림자",
+      "이모지·이모티콘 본문에 사용"
+    ]
+  },
+  "image_prompt_overrides": {
+    "lighting": "soft moody studio lighting, large soft key from upper-left with warm rim light, gentle controlled shadows on the opposite side, magazine-grade still life",
+    "palette": "muted warm grays, ivory, taupe, soft sand tones, with very subtle warm amber or copper accents — strictly no neon, no saturated primaries",
+    "background": "minimal warm gray or ivory seamless backdrop, or refined natural texture surface (washed linen / warm oak / unbleached paper), abundant negative space",
+    "mood": "editorial premium still life, 감성적 섬세 quietly luxurious, magazine-photography tone rather than ad photography"
+  },
+  "next_freelancers_to_add": [
+    "(추후) 다른 크몽 베스트셀러 상세페이지 디자이너 — 캐주얼/모던/미니멀 결",
+    "(추후) 사장님이 좋아하시는 작가 URL 공유 시 동일 스키마로 추가"
+  ]
+}

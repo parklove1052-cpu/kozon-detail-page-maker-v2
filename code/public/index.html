@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>코존 상세페이지 제작 도구</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>코존 상세페이지 제작 도구</h1>
+    <div class="status">
+      <span id="server-status" class="dot dot--idle" title="서버 상태"></span>
+      <span class="muted">로컬 · Claude CLI 호출</span>
+    </div>
+  </header>
+
+  <!-- 서버 OFF 시 사장님 친화 안내 (pingServer 실패 시 동적으로 노출) -->
+  <div id="server-offline-banner" class="server-offline-banner" hidden>
+    <div class="server-offline-banner__icon">⚠</div>
+    <div class="server-offline-banner__body">
+      <div class="server-offline-banner__title">서버가 꺼져 있습니다</div>
+      <div class="server-offline-banner__msg">
+        도구를 사용하려면 로컬 서버가 떠 있어야 합니다. 도메인 폴더의 <code>서버 재시작.bat</code> 또는 <code>code/start_hidden.vbs</code>를 더블클릭해 주세요. 살아나면 이 배너가 자동으로 사라집니다.
+      </div>
+      <div class="server-offline-banner__path" id="server-offline-path"></div>
+    </div>
+    <button id="server-offline-retry" class="btn btn--ghost" type="button">지금 다시 확인</button>
+  </div>
+
+  <main class="grid">
+    <!-- ─────────── 좌측: 상세페이지 만들기 (4-Step 워크플로우) ─────────── -->
+    <section class="panel panel--maker">
+      <h2>📦 상세페이지 만들기</h2>
+
+      <!-- ──────── Step 1. 기본 입력 ──────── -->
+      <div class="step" id="step-1">
+        <div class="step__head">
+          <span class="step__badge"><span class="step__badge-num">1</span></span>
+          <span class="step__title">기본 입력</span>
+          <span class="step__hint">(카피·스타일·레퍼런스·참고 이미지)</span>
+        </div>
+
+        <div class="field">
+          <label>이미지 첨부 <span class="hint">(드래그앤드롭 / 클릭 / Ctrl+V — 둘 다 선택)</span></label>
+          <div class="dropzone-grid">
+
+            <div class="dropzone-col dropzone-col--product">
+              <div class="dropzone-col__label">
+                <span class="dropzone-col__badge dropzone-col__badge--product">제품</span>
+                <span class="dropzone-col__title">제품 사진 첨부</span>
+                <span class="dropzone-col__sub">이 제품을 그대로 사용 · 배경/씬만 변경 요청</span>
+              </div>
+              <div id="dropzone-product" class="dropzone dropzone--product" tabindex="0">
+                <p class="dropzone__hint">제품 사진을 여기로 끌어다 놓거나 클릭</p>
+                <p class="dropzone__hint dropzone__hint--sub">제품을 기준으로 배경·씬을 바꾸는 프롬프트가 생성됩니다</p>
+                <input type="file" id="file-input-product" accept="image/*" multiple hidden />
+              </div>
+              <div id="image-list-product" class="image-list"></div>
+            </div>
+
+            <div class="dropzone-col dropzone-col--reference">
+              <div class="dropzone-col__label">
+                <span class="dropzone-col__badge dropzone-col__badge--reference">기타</span>
+                <span class="dropzone-col__title">기타 이미지 첨부</span>
+                <span class="dropzone-col__sub">상세페이지에 그대로 활용할 이미지 (선택)</span>
+              </div>
+              <div id="dropzone-reference" class="dropzone dropzone--reference" tabindex="0">
+                <p class="dropzone__hint">활용할 이미지를 여기로 끌어다 놓거나 클릭</p>
+                <p class="dropzone__hint dropzone__hint--sub">비워두면 OK — 부족한 이미지만 자동으로 프롬프트가 생성됩니다</p>
+                <input type="file" id="file-input-reference" accept="image/*" multiple hidden />
+              </div>
+              <div id="image-list-reference" class="image-list"></div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="content-text">상세페이지 내용</label>
+          <textarea id="content-text" rows="10" placeholder="제품명, 스펙, USP, 카피 등 자유롭게 입력하세요. 우측 '내용 추출하기' 결과를 복붙해도 됩니다."></textarea>
+        </div>
+
+        <div class="field">
+          <label for="style-select">디자인 스타일</label>
+          <select id="style-select"></select>
+          <p id="style-desc" class="muted"></p>
+        </div>
+
+        <div class="field">
+          <label for="reference-select">레퍼런스 — 참고 작가 <span class="hint">(선택, 디자인 스타일을 덮어씌움)</span></label>
+          <select id="reference-select"></select>
+          <p id="reference-desc" class="muted"></p>
+        </div>
+
+        <div class="field">
+          <label for="content-style-select">내용 스타일</label>
+          <select id="content-style-select"></select>
+          <p id="content-style-desc" class="muted"></p>
+        </div>
+
+        <div class="step__action-pair">
+          <div class="action-card">
+            <button id="btn-plan" class="btn btn--primary">① 기획 + 이미지 프롬프트 생성</button>
+            <p class="action-card__hint">이미지가 아직 없으면 — 영문 프롬프트를 받아 ChatGPT로 이미지 만든 뒤 Step 3에 채워 진행</p>
+          </div>
+          <div class="action-card">
+            <button id="btn-direct-generate" class="btn btn--primary btn--alt">⚡ 주어진 자료로 바로 제작</button>
+            <p class="action-card__hint">이미지가 이미 다 있으면 — 기획·HTML 생성을 자동 연쇄로 한 번에 완성 (Step 2·3 자동 처리)</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ──────── Step 2. 이미지 슬롯 승인 (v0.7) ──────── -->
+      <div class="step" id="step-2" data-locked="true">
+        <div class="step__head">
+          <span class="step__badge"><span class="step__badge-num">2</span></span>
+          <span class="step__title">이미지 슬롯 승인</span>
+          <span class="step__hint">(슬롯별로 ✓ 승인 / ✗ 거절 — Higgsfield가 자동 생성)</span>
+        </div>
+
+        <div id="plan-summary" class="plan-summary" hidden></div>
+
+        <div class="approval-toolbar" id="approval-toolbar" hidden>
+          <div class="approval-summary" id="approval-summary">
+            총 <span id="approval-total">0</span>개 ·
+            <span class="approval-summary__ok"><span id="approval-approved">0</span> 승인</span> ·
+            <span class="approval-summary__bad"><span id="approval-rejected">0</span> 거절</span>
+          </div>
+          <div class="approval-toolbar__actions">
+            <button id="btn-approve-all" class="btn btn--ghost">전체 승인</button>
+            <button id="btn-reject-all" class="btn btn--ghost">전체 거절</button>
+            <button id="btn-higgsfield-generate" class="btn btn--primary">🎨 Higgsfield 일괄 생성 →</button>
+          </div>
+        </div>
+
+        <div id="approval-grid" class="approval-grid"></div>
+
+        <details class="prompt-fallback" id="prompt-fallback" hidden>
+          <summary>📋 영문 프롬프트 보기 (수동 ChatGPT 사용 시)</summary>
+          <div class="result-toolbar">
+            <button id="btn-copy-all-prompts" class="btn btn--ghost">📋 모든 영문 프롬프트 복사</button>
+            <button id="btn-download-prompts" class="btn btn--ghost">⤓ .txt 다운로드</button>
+          </div>
+          <div id="prompt-cards" class="prompt-cards"></div>
+        </details>
+      </div>
+
+      <!-- ──────── Step 3. 자동 생성 결과 (v0.7) ──────── -->
+      <div class="step" id="step-3" data-locked="true">
+        <div class="step__head">
+          <span class="step__badge"><span class="step__badge-num">3</span></span>
+          <span class="step__title">자동 생성 결과</span>
+          <span class="step__hint">(승인 슬롯 → Higgsfield → PNG · 필요한 컷만 ✏️ Inpaint 또는 🔄 재생성)</span>
+        </div>
+
+        <div id="generation-status" class="generation-status" hidden>
+          <div class="generation-status__msg" id="generation-status-msg">대기 중…</div>
+          <div class="generation-progress"><div class="generation-progress__fill" id="generation-progress-fill"></div></div>
+        </div>
+
+        <p class="muted" id="slot-progress">Step 2에서 슬롯을 승인 후 「Higgsfield 일괄 생성」 버튼을 누르세요. 자동 생성된 PNG가 여기 표시됩니다.</p>
+
+        <div id="slot-grid" class="slot-grid"></div>
+
+        <details class="manual-upload-fallback" id="manual-upload-fallback">
+          <summary>📎 수동 업로드로 진행 (외부 도구로 직접 만든 이미지가 있다면)</summary>
+          <p class="muted">아래 슬롯에 직접 이미지를 드래그/클릭으로 업로드하면 자동 생성 결과 대신 이 이미지가 쓰입니다.</p>
+          <div id="manual-slot-grid" class="slot-grid slot-grid--manual"></div>
+        </details>
+      </div>
+
+      <!-- ──────── Step 4. 최종 생성 ──────── -->
+      <div class="step" id="step-4" data-locked="true">
+        <div class="step__head">
+          <span class="step__badge"><span class="step__badge-num">4</span></span>
+          <span class="step__title">최종 생성</span>
+          <span class="step__hint">(기획 + 이미지 → 단일 HTML)</span>
+        </div>
+
+        <button id="btn-generate" class="btn btn--primary">② 상세페이지 HTML 생성</button>
+
+        <div class="result-area" id="generate-result" hidden>
+          <div class="result-done-banner">
+            <span class="result-done-banner__icon">✓</span>
+            <span class="result-done-banner__text">생성 완료 — 아래 다운로드 영역에서 받으세요</span>
+            <span id="saved-path-info" class="result-done-banner__sub"></span>
+          </div>
+
+          <!-- 보조 도구 -->
+          <details class="result-details">
+            <summary>📂 결과 코드/미리보기 (펼치기)</summary>
+            <div class="result-toolbar">
+              <button id="btn-copy-html" class="btn btn--ghost">📋 HTML 코드 복사</button>
+              <button id="btn-toggle-view" class="btn btn--ghost">코드 ↔ 미리보기 전환</button>
+              <a id="btn-open-saved" class="btn btn--ghost" href="#" target="_blank" hidden>↗ 저장본 새 창에서 열기</a>
+            </div>
+            <pre id="result-code" class="result-code"></pre>
+            <iframe id="result-preview" class="result-preview" hidden></iframe>
+          </details>
+        </div>
+      </div>
+
+      <!-- ──────── 결과 다운로드 (Step 잠금 무관, 항상 표시) ──────── -->
+      <div class="download-section" id="download-section" data-state="idle">
+        <div class="download-section__head">
+          <span class="download-section__badge">📥</span>
+          <span class="download-section__title">결과 다운로드</span>
+          <span class="download-section__hint" id="download-state-label">생성 완료 후 자동 활성화</span>
+        </div>
+        <div class="download-grid download-grid--hero" id="download-bar">
+          <button id="btn-download-html" class="btn btn--primary btn--download" disabled title="먼저 ② 상세페이지 HTML 생성 버튼을 눌러주세요">
+            <span class="btn__emoji">📄</span>
+            <span class="btn__main">상세페이지 HTML 다운받기</span>
+            <span class="btn__sub">단일 HTML 파일 (.html)</span>
+          </button>
+          <button id="btn-download-jpeg" class="btn btn--primary btn--jpeg btn--download" disabled title="먼저 ② 상세페이지 HTML 생성 버튼을 눌러주세요">
+            <span class="btn__emoji">🖼️</span>
+            <span class="btn__main">JPEG로 다운받기</span>
+            <span class="btn__sub">페이지별 분할 (.zip)</span>
+          </button>
+        </div>
+        <p id="download-hint" class="download-hint muted">① 기획 → ② 상세페이지 HTML 생성 순서대로 진행해 주세요. 완료되면 두 버튼이 활성화됩니다.</p>
+      </div>
+    </section>
+
+    <!-- ─────────── 우측 컬럼 (스택) ─────────── -->
+    <div class="right-stack">
+
+      <!-- 우측 상단: 내용 추출하기 -->
+      <section class="panel panel--extractor">
+        <h2>💡 내용 추출하기</h2>
+        <p class="muted">자연어로 원하는 내용을 적으면, 상세페이지 섹션 단위로 정리해 드립니다.</p>
+
+        <div class="field">
+          <label for="extract-input">자연어 설명</label>
+          <textarea id="extract-input" rows="8" placeholder="예시: 20대 여성용 봄 시즌 향수 상세페이지를 만들고 싶어. 가벼운 플로럴 향, 8시간 지속력, 휴대성 강조했으면 좋겠고, 가격은 4만 원대. 친구 같은 톤으로."></textarea>
+        </div>
+
+        <button id="btn-extract" class="btn btn--primary">내용 추출하기</button>
+
+        <div class="field result-area" id="extract-result" hidden>
+          <h3>추출 결과</h3>
+          <div class="result-toolbar">
+            <button id="btn-copy-extract" class="btn btn--ghost">복사하기</button>
+            <button id="btn-send-to-maker" class="btn btn--ghost">↖ 좌측 입력란으로 보내기</button>
+          </div>
+          <pre id="extract-output" class="result-code"></pre>
+        </div>
+      </section>
+
+      <!-- 우측 하단: 이미지 프롬프트 만들기 -->
+      <section class="panel panel--imageprompt">
+        <h2>🎨 이미지 프롬프트</h2>
+        <p class="muted">ChatGPT 이미지 생성에 그대로 붙여넣을 영문 프롬프트를 만듭니다. 컷 비율·플랫폼 사이즈는 자동 매칭.</p>
+
+        <div class="field">
+          <label for="ip-product">상품 / 핵심 설명 <span class="hint">(영문 권장)</span></label>
+          <input type="text" id="ip-product" placeholder="예: matte black ceramic perfume bottle, 50ml" />
+        </div>
+
+        <div class="field two-col">
+          <div>
+            <label for="ip-shot">컷 종류</label>
+            <select id="ip-shot">
+              <option value="main">메인 비주얼 (1:1)</option>
+              <option value="detail">디테일 클로즈업 (1:1)</option>
+              <option value="scene">사용 시나리오 (3:2)</option>
+              <option value="infographic">인포그래픽 (4:5)</option>
+              <option value="comparison">비교 컷 (2:1)</option>
+              <option value="banner">CTA 배너 (16:9)</option>
+            </select>
+          </div>
+          <div>
+            <label for="ip-style">디자인 톤</label>
+            <select id="ip-style">
+              <option value="premium">프리미엄</option>
+              <option value="casual">캐주얼</option>
+              <option value="minimal" selected>미니멀</option>
+              <option value="modern">모던</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="ip-platform">플랫폼 <span class="hint">(권장 사이즈 자동)</span></label>
+          <select id="ip-platform">
+            <option value="naver" selected>네이버 스마트스토어 (폭 860px)</option>
+            <option value="coupang">쿠팡 (폭 780px)</option>
+            <option value="instagram">인스타그램</option>
+            <option value="own">자사몰 / 자유</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="ip-reference">레퍼런스 작가 <span class="hint">(선택 시 디자인 톤 오버라이드)</span></label>
+          <select id="ip-reference"></select>
+        </div>
+
+        <div class="field">
+          <label for="ip-extra">추가 디렉션 <span class="hint">(선택)</span></label>
+          <textarea id="ip-extra" rows="2" placeholder="예: 사람 손이 살짝 잡고 있음 / 카페 테이블 위 / 김 서린 유리잔"></textarea>
+        </div>
+
+        <button id="btn-imageprompt" class="btn btn--primary">프롬프트 생성</button>
+
+        <div class="field result-area" id="imageprompt-result" hidden>
+          <h3>생성된 프롬프트</h3>
+          <div class="result-toolbar">
+            <button id="btn-copy-imageprompt" class="btn btn--ghost">📋 영문 프롬프트 복사</button>
+            <button id="btn-copy-imageprompt-kr" class="btn btn--ghost">📝 한글 메모 복사</button>
+          </div>
+          <pre id="imageprompt-output" class="result-code"></pre>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- 진행 오버레이 -->
+  <div id="loading-overlay" class="loading" hidden>
+    <div class="loading__spinner"></div>
+    <div id="loading-message" class="loading__msg">Claude CLI 호출 중... (보통 30초~2분)</div>
+  </div>
+
+  <!-- 토스트 알림 -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Inpaint 모달 (v0.7) -->
+  <div id="inpaint-modal" class="inpaint-modal" hidden>
+    <div class="inpaint-modal__card">
+      <button id="inpaint-modal-close" class="inpaint-modal__close" type="button" title="닫기">✕</button>
+      <h3 id="inpaint-modal-title">✏️ 슬롯 수동 수정</h3>
+      <p class="inpaint-modal__sub" id="inpaint-modal-sub">Higgsfield Inpaint에서 수정 후 결과를 여기로 가져오세요</p>
+
+      <div class="inpaint-modal__preview">
+        <img id="inpaint-modal-img" alt="" />
+      </div>
+
+      <ol class="inpaint-modal__steps">
+        <li>아래 「Higgsfield Inpaint 열기」 클릭 — 이미지가 클립보드에 자동 복사되고 새 탭이 열립니다</li>
+        <li>Higgsfield 화면에서 <b>Ctrl+V</b> → 영역 칠하기 → 프롬프트 입력 → 생성</li>
+        <li>결과를 우클릭 「이미지 복사」 또는 다운로드</li>
+        <li>이 모달로 돌아와 아래 영역에 <b>드래그</b> 또는 <b>Ctrl+V</b></li>
+      </ol>
+
+      <button id="btn-open-higgsfield" class="btn btn--primary inpaint-modal__open">▶ Higgsfield Inpaint 열기 + 클립보드 복사</button>
+
+      <label class="inpaint-modal__label">수정된 PNG 받기</label>
+      <div id="inpaint-dropzone" class="inpaint-modal__drop">
+        여기에 드래그 또는 <b>Ctrl+V</b>로 붙여넣기
+      </div>
+
+      <div class="inpaint-modal__actions">
+        <button id="btn-inpaint-rollback" class="btn btn--ghost">⏮ 이전 버전으로</button>
+        <button id="btn-inpaint-cancel" class="btn btn--ghost">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 캐시 무효화 — 서버 boot_time을 가져와 app.js URL에 ?v= 부착 (브라우저 강제 새 버전)
+    (function () {
+      var s = document.createElement('script');
+      // SSG 아니라 inline 처리. boot_time이 없으면 timestamp fallback.
+      var v = String(Date.now());
+      try {
+        // 부모(상세페이지 제작기.html)가 already health 체크한 경우 sessionStorage에서 가져오기
+        var cached = sessionStorage.getItem('__server_boot_time');
+        if (cached) v = cached;
+      } catch (_) {}
+      s.src = './app.js?v=' + v;
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>

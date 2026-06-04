@@ -1,0 +1,53 @@
+# 업로드된 사용자 이미지 (세션별 폴더, 사용자 데이터)
+code/uploads/*
+!code/uploads/.gitkeep
+
+# Playwright MCP 브라우저 프로필 (로그인 쿠키 포함 — 절대 커밋 금지)
+.playwright-profile/
+code/.playwright-profile/
+
+# Playwright MCP 임시 산출물 (스크린샷/스냅샷/콘솔 로그)
+.playwright-mcp/
+code/.playwright-mcp/
+neon_ui_overview.png
+neon_ui_v2.png
+neon_imageprompt.png
+page-*.png
+
+# 도구 산출물 (도메인 코드와 분리)
+output/
+code/output/
+research/
+copy/
+benchmarks/
+qa/
+상세제작결과/
+
+# 사장님 개인 자료 (public repo에 노출 금지)
+면접서류/
+
+# 임시 디버그/프롬프트 파일
+code/_last_prompt.txt
+code/_last_response*.txt
+_last_prompt.txt
+_last_response*.txt
+
+# 환경 변수
+.env
+.env.local
+.env.*.local
+code/.env
+code/.env.local
+
+# Node
+node_modules/
+code/node_modules/
+*.log
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~

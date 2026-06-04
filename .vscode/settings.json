@@ -1,0 +1,16 @@
+{
+    "window.title":  "🖼️ 상세페이지 제작자  ${separator}  ${rootName}  ${separator}  ${activeEditorShort}",
+    "terminal.integrated.tabs.title":  "🖼️ 상세페이지 제작자",
+    "workbench.colorCustomizations":  {
+                                          "titleBar.activeBackground":  "#0f766e",
+                                          "titleBar.activeForeground":  "#ffffff",
+                                          "titleBar.inactiveBackground":  "#0f766e",
+                                          "titleBar.inactiveForeground":  "#e5e7eb",
+                                          "statusBar.background":  "#0f766e",
+                                          "statusBar.foreground":  "#ffffff",
+                                          "statusBar.noFolderBackground":  "#0f766e",
+                                          "activityBar.background":  "#0f766e",
+                                          "activityBar.foreground":  "#ffffff",
+                                          "activityBar.activeBorder":  "#ffffff"
+                                      }
+}
