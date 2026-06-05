@@ -112,9 +112,11 @@ function check(name, level, status, detail) {
 {
   const r = run('higgsfield', ['--version'], { timeout: 8000 });
   if (r.ok) {
-    // 로그인 상태 확인
-    const auth = run('higgsfield', ['auth', 'status'], { timeout: 8000 });
-    if (auth.ok && /logged in|authenticated|active/i.test(auth.stdout + auth.stderr)) {
+    // 로그인 상태 확인 — `higgsfield auth status` 명령은 존재하지 않음 (login/logout/token만).
+    // 토큰이 출력되면 로그인 상태로 판정. (코존 점검: 67자 JWT 형태)
+    const auth = run('higgsfield', ['auth', 'token'], { timeout: 8000 });
+    const tokenLine = (auth.stdout || '').split('\n').find((l) => /^[A-Za-z0-9_\-.]{20,}$/.test(l.trim()));
+    if (auth.ok && tokenLine) {
       check('Higgsfield CLI', 'recommended', 'ok', r.stdout.split('\n')[0] + ' (로그인됨)');
     } else {
       check('Higgsfield CLI', 'recommended', 'unauth', '설치됨, 로그인 필요');
