@@ -51,3 +51,5 @@ desktop.ini
 *.swp
 *.swo
 *~
+chatgpt-profile/
+code/generated/

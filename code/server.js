@@ -9,6 +9,51 @@ const { spawn, exec } = require('child_process');
 const crypto = require('crypto');
 
 const ROOT = __dirname;
+
+// ──────── ChatGPT Image Generation (lazy ESM import) ────────
+let _chatgptImageModule = null;
+async function getChatgptImageModule() {
+  if (!_chatgptImageModule) {
+    _chatgptImageModule = await import('./lib/chatgpt-image.mjs');
+  }
+  return _chatgptImageModule;
+}
+
+// In-memory job store for ChatGPT image jobs
+const CHATGPT_JOBS = new Map();
+
+function createChatgptJob(prompt, count) {
+  const job = {
+    id: require('crypto').randomBytes(16).toString('hex'),
+    state: 'pending',
+    prompt,
+    count,
+    createdAt: Date.now(),
+    files: null,
+    error: null,
+    elapsed_ms: null,
+  };
+  CHATGPT_JOBS.set(job.id, job);
+  return job;
+}
+
+function runChatgptJob(job) {
+  job.state = 'running';
+  getChatgptImageModule()
+    .then(mod => mod.generateImage({ prompt: job.prompt, count: job.count }))
+    .then(result => {
+      job.state = 'done';
+      job.files = result.files;
+      job.elapsed_ms = result.elapsed_ms;
+      console.log('[chatgpt-job ' + job.id.slice(0,8) + '] done ' + result.files.length + ' file(s)');
+    })
+    .catch(err => {
+      job.state = 'failed';
+      job.error = err.message || String(err);
+      console.error('[chatgpt-job ' + job.id.slice(0,8) + '] failed: ' + job.error);
+    });
+}
+
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const UPLOADS_DIR = path.join(ROOT, 'uploads');
 const CONFIG_PATH = path.join(ROOT, 'config.json');
@@ -1740,6 +1785,40 @@ const server = http.createServer(async (req, res) => {
     if (method === 'POST' && pathname === '/api/extract') {
       return handleExtract(req, res);
     }
+
+    // ──────── ChatGPT image generation routes ────────
+    if (method === 'POST' && pathname === '/api/images/chatgpt/generate') {
+      let body = '';
+      req.on('data', c => { body += c; });
+      req.on('end', () => {
+        let parsed = {};
+        try { parsed = JSON.parse(body); } catch (_) {}
+        const prompt = (parsed.prompt || '').trim();
+        const count  = Math.max(1, Math.min(4, parseInt(parsed.count, 10) || 1));
+        if (!prompt) return sendError(res, 400, 'prompt is required');
+        const job = createChatgptJob(prompt, count);
+        runChatgptJob(job);
+        sendJSON(res, 202, { ok: true, jobId: job.id });
+      });
+      return;
+    }
+    if (method === 'GET' && pathname.startsWith('/api/images/chatgpt/jobs/')) {
+      const jobId = pathname.replace('/api/images/chatgpt/jobs/', '').split('/')[0];
+      const job = CHATGPT_JOBS.get(jobId);
+      if (!job) return sendError(res, 404, 'job not found', jobId);
+      return sendJSON(res, 200, {
+        ok: true,
+        job: {
+          id: job.id,
+          state: job.state,
+          createdAt: job.createdAt,
+          files: job.files,
+          elapsed_ms: job.elapsed_ms,
+          error: job.error,
+        },
+      });
+    }
+
 
     // ──────── v0.7 — Higgsfield MCP 기반 워크플로우 ────────
     // V07 mount 실패 시 일관된 503 응답 (메인 API는 그대로 떠 있음)
