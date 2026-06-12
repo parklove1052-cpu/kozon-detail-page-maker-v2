@@ -495,15 +495,48 @@ async function findConversationUrls(page, projectName, count) {
     ({ anchors, matched } = await countMatched());
   }
 
-  // 2) 부족하면 사이드바 스크롤해서 hidden conversation 로드 (최대 8회 반복)
+  // 2) 부족하면 사이드바 스크롤해서 hidden conversation 로드 (최대 4회 반복)
   let scrollAttempts = 0;
-  while (matched < count && scrollAttempts < 8) {
+  while (matched < count && scrollAttempts < 4) {
     const scrolled = await scrollSidebarToBottom();
     if (!scrolled) break;
-    await page.waitForTimeout(800); // virtualized list 렌더 대기
+    await page.waitForTimeout(800);
     ({ anchors, matched } = await countMatched());
     scrollAttempts++;
     console.log('[conv] After scroll ' + scrollAttempts + ': matched=' + matched);
+  }
+
+  // 3) "더 보기" 버튼 자동 클릭 — 프로젝트(조) 펼침 영역 안 ps-9 들여쓰기 button만 (다른 섹션 영향 X)
+  async function clickProjectMoreButton() {
+    const buttons = await page.$$('button.ps-9[data-sidebar-item="true"], button[class*="ps-9"][data-sidebar-item="true"]');
+    for (const b of buttons) {
+      try {
+        const txt = await b.evaluate(el => {
+          const t = el.querySelector('div.truncate');
+          return t ? t.textContent.trim() : '';
+        });
+        if (txt === '더 보기' || txt === 'Show more' || txt === 'See more') {
+          if (await b.isVisible()) {
+            await b.scrollIntoViewIfNeeded().catch(() => {});
+            await b.click().catch(() => {});
+            console.log('[conv] Clicked "더 보기" in project area');
+            await page.waitForTimeout(1500);
+            return true;
+          }
+        }
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  let moreAttempts = 0;
+  while (matched < count && moreAttempts < 5) {
+    const clicked = await clickProjectMoreButton();
+    if (!clicked) break;
+    await page.waitForTimeout(1000);
+    ({ anchors, matched } = await countMatched());
+    moreAttempts++;
+    console.log('[conv] After "더 보기" ' + moreAttempts + ': matched=' + matched);
   }
 
   // 3) 최종 anchor 목록에서 URL/label 추출
