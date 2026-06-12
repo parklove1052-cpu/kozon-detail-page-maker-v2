@@ -319,51 +319,62 @@ async function enterProject(page, projectName) {
     throw new Error('Sidebar row not found: "' + projectName + '" (role=button + aria-expanded). Diagnostic dumped.');
   }
 
-  // 2) 이미 펼쳐졌는지 aria-expanded 직접 확인
-  let expanded = (await target.getAttribute('aria-expanded')) === 'true';
-  if (expanded) {
-    console.log('[project] aria-expanded=true already — skip toggle');
+  // 2) 펼침 확인 — aria-expanded 신뢰하지 말고, 하위 conversation anchor 개수로 진짜 펼침 검사
+  async function isExpanded() {
+    const ariaExp = await target.getAttribute('aria-expanded').catch(() => null);
+    if (ariaExp === 'true') {
+      // 하위 conversation anchor가 1개 이상 실제로 보이는지 추가 확인 (aria/render desync 방지)
+      const all = await page.$$('a[data-sidebar-item="true"]');
+      for (const a of all) {
+        try {
+          const label = (await a.getAttribute('aria-label')) || '';
+          if (label.includes(projectName) && await a.isVisible()) return true;
+        } catch (_) {}
+      }
+      return false; // aria-expanded=true이지만 실제 렌더는 안 됨 (잘못된 상태)
+    }
+    return false;
+  }
+
+  if (await isExpanded()) {
+    console.log('[project] already expanded — skip toggle');
     return page.url();
   }
 
-  // 3) 펼침 시도 — 3가지 방법 순차
+  // 3) 펼침 시도 — hover + click + 5초 대기 (충분한 React 렌더 시간)
   await target.scrollIntoViewIfNeeded().catch(() => {});
-
-  // 3-A) 일반 click
-  console.log('[project] Try (A): target.click()');
+  console.log('[project] Try (A): hover + click + 5s');
+  await target.hover().catch(() => {});
+  await page.waitForTimeout(300);
   await target.click().catch(e => console.warn('  click err: ' + e.message));
-  await page.waitForTimeout(1500);
-  expanded = (await target.getAttribute('aria-expanded')) === 'true';
-  if (expanded) { console.log('[project] expanded via click'); return page.url(); }
+  await page.waitForTimeout(5000);
+  if (await isExpanded()) { console.log('[project] expanded via click'); return page.url(); }
 
-  // 3-B) 포커스 + Enter (role=button은 키보드 토글 가능)
-  console.log('[project] Try (B): focus + Enter');
-  await target.focus().catch(() => {});
-  await page.keyboard.press('Enter').catch(() => {});
-  await page.waitForTimeout(1500);
-  expanded = (await target.getAttribute('aria-expanded')) === 'true';
-  if (expanded) { console.log('[project] expanded via Enter'); return page.url(); }
+  // 4) 마우스 좌표 직접 click — Playwright high-level click이 React Aria와 안 맞을 때 폴백
+  console.log('[project] Try (B): mouse.click on bounding box center');
+  try {
+    const box = await target.boundingBox();
+    if (box) {
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      await page.mouse.move(x, y);
+      await page.waitForTimeout(150);
+      await page.mouse.down();
+      await page.waitForTimeout(100);
+      await page.mouse.up();
+      await page.waitForTimeout(5000);
+      if (await isExpanded()) { console.log('[project] expanded via mouse.click coords'); return page.url(); }
+    }
+  } catch (e) { console.warn('  coord click err: ' + e.message); }
 
-  // 3-C) JS dispatchEvent (React Aria 비동기 핸들러 강제 트리거)
-  console.log('[project] Try (C): dispatchEvent click');
-  await target.evaluate(el => {
-    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-  }).catch(() => {});
-  await page.waitForTimeout(1500);
-  expanded = (await target.getAttribute('aria-expanded')) === 'true';
-  if (expanded) { console.log('[project] expanded via dispatchEvent'); return page.url(); }
-
-  // 3-D) Space 키 — role=button 추가 폴백
-  console.log('[project] Try (D): focus + Space');
-  await target.focus().catch(() => {});
-  await page.keyboard.press('Space').catch(() => {});
-  await page.waitForTimeout(1500);
-  expanded = (await target.getAttribute('aria-expanded')) === 'true';
-  if (expanded) { console.log('[project] expanded via Space'); return page.url(); }
-
-  // 실패 — 진단 dump + 에러
+  // 실패 — 진단 dump + 명확한 에러
   await dumpDiagnostic(page, 'project_expand_failed');
-  throw new Error('"' + projectName + '" 사이드바 row 펼침 실패 (4가지 방법 모두 실패). 진단 자료: code/generated/_diag_project_expand_failed_*.png');
+  throw new Error(
+    '"' + projectName + '" 사이드바 펼침 실패 (2가지 방법 모두). 우회 안내: ' +
+    'ChatGPT 브라우저에서 사장님이 직접 "프로젝트(조)"를 한 번 펼쳐 두신 뒤 chatgpt-profile에 그 상태가 저장되도록 한 다음 다시 시도해 주세요. ' +
+    '또는 사장님이 직접 그 안에서 새 대화 N개 미리 만들어 두시면 첫 진입 시 펼침 상태 유지될 수 있습니다. ' +
+    '진단 자료: code/generated/_diag_project_expand_failed_*.png'
+  );
 }
 
 // ChatGPT 입력 영역의 hidden file input 후보 셀렉터
