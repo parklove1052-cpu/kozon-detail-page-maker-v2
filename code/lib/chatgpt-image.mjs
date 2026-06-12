@@ -343,15 +343,35 @@ async function enterProject(page, projectName) {
     throw new Error('Sidebar item not found: "' + projectName + '". Diagnostic dumped.');
   }
 
-  // 이미 펼쳐진 상태면 클릭으로 접힐 위험 — 하위 conversation 항목이 이미 보이면 클릭 skip
-  const alreadyExpanded = (await page.$$('a[data-sidebar-item="true"]')).length > 2;
-  if (alreadyExpanded) {
-    console.log('[project] Sidebar already expanded — skip click to avoid toggle');
+  // 이미 펼쳐진 상태 감지 — 프로젝트(조) 하위 conversation aria-label 가진 anchor가 있어야 진짜 펼침
+  async function countProjectAnchors() {
+    const all = await page.$$('a[data-sidebar-item="true"]');
+    let n = 0;
+    for (const a of all) {
+      try {
+        const label = (await a.getAttribute('aria-label')) || '';
+        if (label.includes(projectName)) n++;
+      } catch (_) {}
+    }
+    return n;
+  }
+
+  const beforeCount = await countProjectAnchors();
+  if (beforeCount > 0) {
+    console.log('[project] Sidebar already shows ' + beforeCount + ' "' + projectName + '" anchors — skip click');
   } else {
     await target.scrollIntoViewIfNeeded().catch(() => {});
     await target.click();
-    // ChatGPT는 프로젝트 진입을 SPA 라우팅으로 처리해 URL이 안 바뀜 — 클릭 후 충분히 대기하면 진입 완료
     await page.waitForTimeout(3500);
+    // 펼침 확인 — 안 펼쳐졌으면 한 번 더 클릭 (토글 처리)
+    let afterCount = await countProjectAnchors();
+    if (afterCount === 0) {
+      console.log('[project] First click did not expand — trying once more');
+      await target.click().catch(() => {});
+      await page.waitForTimeout(3500);
+      afterCount = await countProjectAnchors();
+    }
+    console.log('[project] After click: ' + afterCount + ' project anchors visible');
   }
   const url = page.url();
   console.log('[project] Entered project (SPA, URL may stay): ' + url);
