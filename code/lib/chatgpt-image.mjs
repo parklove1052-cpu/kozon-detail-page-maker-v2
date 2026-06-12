@@ -439,25 +439,74 @@ async function attachImageToInput(page, attachPath, tabIdx) {
 // — 새 대화를 만들지 않고 기존 N개 대화를 재활용해 rate-limit 회피
 async function findConversationUrls(page, projectName, count) {
   console.log('[conv] Collecting up to ' + count + ' conversation URLs under "' + projectName + '"...');
-  // 사이드바 렌더 안정화 — 항목이 count개 이상 잡힐 때까지 폴링 (최대 8초)
-  const deadline = Date.now() + 8000;
-  let anchors = [];
-  let matched = 0;
-  while (Date.now() < deadline) {
-    anchors = await page.$$('a[data-sidebar-item="true"]');
-    // projectName 매치 개수 임시 카운트
-    matched = 0;
+
+  // 사이드바를 끝까지 스크롤해서 모든 conversation 노출 (virtualized list 대응)
+  async function scrollSidebarToBottom() {
+    try {
+      // 사이드바 scrollable container 찾기
+      const sidebarSelectors = ['nav', 'aside', '[role="navigation"]'];
+      for (const ss of sidebarSelectors) {
+        const sidebar = await page.$(ss);
+        if (!sidebar) continue;
+        // 스크롤 가능한 자식 찾기 + 끝까지 스크롤
+        const scrolled = await sidebar.evaluate(el => {
+          const findScrollable = (root) => {
+            if (root.scrollHeight > root.clientHeight + 4) return root;
+            for (const c of root.children) {
+              const r = findScrollable(c);
+              if (r) return r;
+            }
+            return null;
+          };
+          const sc = findScrollable(el);
+          if (sc) {
+            const prev = sc.scrollTop;
+            sc.scrollTop = sc.scrollHeight;
+            return { ok: true, before: prev, after: sc.scrollTop, height: sc.scrollHeight };
+          }
+          return { ok: false };
+        }).catch(() => ({ ok: false }));
+        if (scrolled && scrolled.ok) {
+          console.log('[conv] Sidebar scrolled to ' + scrolled.after + '/' + scrolled.height);
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  async function countMatched() {
+    const anchors = await page.$$('a[data-sidebar-item="true"]');
+    let matched = 0;
     for (const a of anchors) {
       try {
         const label = (await a.getAttribute('aria-label')) || '';
         if (label.includes(projectName)) matched++;
       } catch (_) {}
-      if (matched >= count) break;
     }
-    if (matched >= count) break;
-    await page.waitForTimeout(500);
+    return { anchors, matched };
   }
 
+  // 1) 초기 검색 — 항목이 count개 이상 잡힐 때까지 폴링 (최대 5초)
+  let { anchors, matched } = await countMatched();
+  const initialDeadline = Date.now() + 5000;
+  while (matched < count && Date.now() < initialDeadline) {
+    await page.waitForTimeout(400);
+    ({ anchors, matched } = await countMatched());
+  }
+
+  // 2) 부족하면 사이드바 스크롤해서 hidden conversation 로드 (최대 8회 반복)
+  let scrollAttempts = 0;
+  while (matched < count && scrollAttempts < 8) {
+    const scrolled = await scrollSidebarToBottom();
+    if (!scrolled) break;
+    await page.waitForTimeout(800); // virtualized list 렌더 대기
+    ({ anchors, matched } = await countMatched());
+    scrollAttempts++;
+    console.log('[conv] After scroll ' + scrollAttempts + ': matched=' + matched);
+  }
+
+  // 3) 최종 anchor 목록에서 URL/label 추출
   const urls = [];
   const labels = [];
   for (const a of anchors) {
