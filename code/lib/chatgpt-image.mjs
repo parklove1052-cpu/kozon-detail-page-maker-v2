@@ -297,13 +297,17 @@ async function enterProject(page, projectName) {
   console.log('[project] Searching sidebar for "' + projectName + '"...');
 
   // 1) ChatGPT 사이드바의 프로젝트 row 는 `role=button` + `aria-expanded` + `data-sidebar-item=true`
-  //    텍스트에 projectName 포함된 row 직접 찾기
+  //    row 안의 `div.truncate` 텍스트가 projectName 정확 매치인 것만
+  //    (textContent로 잡으면 "고정됨" 섹션 헤더가 자식 텍스트까지 합쳐서 잘못 매치)
   async function findProjectRow() {
     const rows = await page.$$('[role="button"][aria-expanded][data-sidebar-item="true"]');
     for (const r of rows) {
       try {
-        const txt = (await r.textContent() || '').trim();
-        if (txt.includes(projectName) && await r.isVisible()) return r;
+        const ownText = await r.evaluate(el => {
+          const t = el.querySelector('div.truncate');
+          return t ? t.textContent.trim() : '';
+        });
+        if (ownText === projectName && await r.isVisible()) return r;
       } catch (_) {}
     }
     return null;
