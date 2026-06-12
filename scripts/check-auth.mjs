@@ -7,7 +7,7 @@
 //
 // 점검 대상:
 //   - Claude Code CLI (필수, 핵심 카피·HTML 생성용)
-//   - Higgsfield CLI (선택, 이미지/영상 생성용 — 이 도구는 글로벌 스킬로 호출)
+//   - GitHub CLI (선택, repo pull/push)
 //   - GitHub CLI (권장, repo pull/push)
 //   - Node, npm (필수)
 //
@@ -108,36 +108,7 @@ function check(name, level, status, detail) {
   }
 }
 
-// ── 4. Higgsfield CLI (선택) ──────────────────────────
-{
-  const r = run('higgsfield', ['--version'], { timeout: 8000 });
-  if (r.ok) {
-    // 로그인 상태 확인 — `higgsfield auth status` 명령은 존재하지 않음 (login/logout/token만).
-    // 토큰이 출력되면 로그인 상태로 판정. (코존 점검: 67자 JWT 형태)
-    const auth = run('higgsfield', ['auth', 'token'], { timeout: 8000 });
-    const tokenLine = (auth.stdout || '').split('\n').find((l) => /^[A-Za-z0-9_\-.]{20,}$/.test(l.trim()));
-    if (auth.ok && tokenLine) {
-      check('Higgsfield CLI', 'recommended', 'ok', r.stdout.split('\n')[0] + ' (로그인됨)');
-    } else {
-      check('Higgsfield CLI', 'recommended', 'unauth', '설치됨, 로그인 필요');
-      result.nextActions.push({
-        target: 'higgsfield-auth',
-        message: 'Higgsfield 에 로그인해주세요 (사장님 Plus 구독 계정).',
-        command: 'higgsfield auth login',
-      });
-    }
-  } else {
-    check('Higgsfield CLI', 'recommended', 'missing', '`higgsfield` 명령 없음 — 이미지/영상 생성 기능 사용 시 필요');
-    result.nextActions.push({
-      target: 'higgsfield-install',
-      message: 'Higgsfield CLI 를 설치하고 로그인해주세요 (이미지/영상 생성 기능 사용 시).',
-      command: 'npm install -g @higgsfield-ai/cli && higgsfield auth login',
-      link: 'https://higgsfield.ai',
-    });
-  }
-}
-
-// ── 5. GitHub CLI (권장) ──────────────────────────────
+// ── 4. GitHub CLI (권장) ──────────────────────────────
 {
   const r = run('gh', ['--version'], { timeout: 8000 });
   if (r.ok) {

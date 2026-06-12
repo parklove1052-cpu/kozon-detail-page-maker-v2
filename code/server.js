@@ -58,19 +58,6 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 const UPLOADS_DIR = path.join(ROOT, 'uploads');
 const CONFIG_PATH = path.join(ROOT, 'config.json');
 
-// v0.7 — Higgsfield MCP 워크플로우 핸들러 (require/초기화 실패 시 메인 API와 격리)
-// 한쪽 모듈(section-prompts, inpaint-store, higgsfield-cli)이 깨져도 메인 서버는 떠야 함.
-// V07_LOAD_ERROR가 set 되어 있으면 /api/v07/* 라우트만 503을 반환.
-let createV07Handlers = null;
-let V07_LOAD_ERROR = null;
-try {
-  ({ createV07Handlers } = require('./lib/v07-handlers'));
-} catch (e) {
-  V07_LOAD_ERROR = e;
-  console.error('[v07] require 실패 — v07 라우트만 비활성. 메인 API는 계속 동작.');
-  console.error('[v07] 원인:', e && e.stack ? e.stack : e);
-}
-
 // 서버 버전 — package.json + git commit short hash 자동 합성 (Codex 진단 5-1)
 // 수동 버전 변경 누락 방지: 패치 시 package.json version만 올리면 자동 감지됨
 const SERVER_BOOT_TIME = Date.now();
@@ -423,10 +410,6 @@ const LAST_OUTPUT_FILE = path.join(UPLOADS_DIR, '_last_output.txt');
 
 // 옵션의 job 인자가 있으면 spawn된 proc을 job.proc에 등록 (cancel 시 강제 종료 가능)
 function callClaude(cwd, prompt, jobRef, options) {
-  // options:
-  //   allowTools (default false) — true 면 --tools 차단 해제. MCP·Read·Write 등 모두 활성화.
-  //                                  v0.7 Higgsfield MCP 호출 시 반드시 true.
-  const allowTools = !!(options && options.allowTools);
   return new Promise((resolve, reject) => {
     const isWin = process.platform === 'win32';
     let stdout = '';
@@ -437,38 +420,18 @@ function callClaude(cwd, prompt, jobRef, options) {
     try {
       // Windows 진단 (Node v24+): .cmd shell:false → EINVAL, shell:true는 통과하지만 cmd.exe 인코딩 깨짐 위험.
       // → cmd.exe 직접 spawn + chcp 65001 로 UTF-8 코드 페이지 강제 (한글 stdin 안전)
-      // --tools "" : claude가 Write/Edit/Bash 등 모든 도구 사용 금지 — 기본은 텍스트 응답만 받음
+      // --tools "" : claude가 Write/Edit/Bash 등 모든 도구 사용 금지 — 텍스트 응답만 받음
       //   (이 옵션 없으면 claude가 파일을 직접 저장하려다 권한 거부 안내 메시지 반환)
-      // allowTools=true (v0.7 MCP) — --tools 인자 자체 제거 + --permission-mode bypassPermissions 추가.
-      //   사장님 신고: "permission denied: mcp__claude_ai_higgsfield_ai__generate_image not granted"
-      //   원인: claude CLI가 도구 호출마다 권한 confirmation을 요구하는데, 비대화형 spawn에서
-      //   응답할 수 없어 거부됨. bypassPermissions 모드로 confirmation 우회.
-      //   안전: 사장님 PC 로컬 spawn + 사장님 prompt만 실행하므로 위험도 최소.
       const baseArgs = ['-p', '--output-format', 'text'];
-      const toolArgs = allowTools
-        ? ['--permission-mode', 'bypassPermissions']
-        : ['--tools', ''];
       if (isWin) {
-        if (allowTools) {
-          // allowTools=true: cmd.exe 경유 금지 — stdin이 cmd에 소비됨.
-          // shell:true로 Node가 claude.cmd shim 자동 해석, stdin이 claude에 직접 전달.
-          proc = spawn('claude', baseArgs.concat(['--permission-mode', 'bypassPermissions']), {
-            cwd,
-            shell: true,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            windowsHide: true,
-          });
-        } else {
-          // allowTools=false (plan/generate): 기존 cmd.exe 분기 유지.
-          const cmd = 'chcp 65001 >nul && claude ' + baseArgs.concat(['--tools', '""']).join(' ');
-          proc = spawn('cmd.exe', ['/c', cmd], {
-            cwd,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            windowsHide: true,
-          });
-        }
+        const cmd = 'chcp 65001 >nul && claude ' + baseArgs.concat(['--tools', '""']).join(' ');
+        proc = spawn('cmd.exe', ['/c', cmd], {
+          cwd,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+        });
       } else {
-        proc = spawn('claude', baseArgs.concat(toolArgs), {
+        proc = spawn('claude', baseArgs.concat(['--tools', '']), {
           cwd,
           stdio: ['pipe', 'pipe', 'pipe'],
         });
@@ -1581,7 +1544,7 @@ function serveUpload(req, res, pathname) {
 }
 
 // 결과 폴더에서 서빙 허용되는 확장자 (allowlist)
-// .html/.txt 는 LLM 산출물 (CSP 강제) — .png/.jpg/.jpeg/.webp 는 v0.7 이미지 산출물 (CSP 미적용)
+// .html/.txt 는 LLM 산출물 (CSP 강제) — .png/.jpg/.jpeg/.webp 는 이미지 산출물 (CSP 미적용)
 const OUTPUT_ALLOWED_EXT = new Set(['.html', '.txt', '.png', '.jpg', '.jpeg', '.webp']);
 const OUTPUT_IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 
@@ -1623,7 +1586,7 @@ function serveOutput(req, res, pathname) {
       return;
     }
     const mime = MIME[ext] || 'application/octet-stream';
-    // 이미지 산출물(v0.7 PNG/JPEG/WebP)은 CSP 미적용 — img 태그로 same-origin 로드되므로 안전
+    // 이미지 산출물(PNG/JPEG/WebP)은 CSP 미적용 — img 태그로 same-origin 로드되므로 안전
     if (OUTPUT_IMAGE_EXT.has(ext)) {
       res.writeHead(200, {
         'Content-Type': mime,
@@ -1668,36 +1631,6 @@ function corsAllowedOrigin(origin) {
   return false;                          // 외부 도메인 — 거절
 }
 
-// ──────────────────────── v0.7 핸들러 초기화 ────────────────────────
-// 모든 의존성(callClaude, createJob, runJob, sendJSON 등) 정의된 시점에 mount
-// 격리: createV07Handlers가 require 단계에서 실패했거나 mount에서 throw해도 메인 서버는 살아남는다
-let V07 = null;
-if (!V07_LOAD_ERROR && typeof createV07Handlers === 'function') {
-  try {
-    V07 = createV07Handlers({
-      callClaude,
-      createJob,
-      runJob,
-      sendJSON,
-      sendError,
-      readBody,
-      loadConfig,
-      OUTPUT_DIR,
-      PayloadTooLargeError,
-    });
-  } catch (e) {
-    V07_LOAD_ERROR = e;
-    console.error('[v07] createV07Handlers 호출 실패 — v07 라우트만 비활성. 메인 API는 계속 동작.');
-    console.error('[v07] 원인:', e && e.stack ? e.stack : e);
-  }
-}
-
-// /api/v07/* 라우트에서 V07이 null일 때 일관된 503 에러 응답
-function sendV07Unavailable(res) {
-  return sendError(res, 503, 'v0.7 Higgsfield 워크플로우 비활성 — 서버 부팅 시 v07-handlers 로드 실패. 서버 콘솔 로그 확인 후 서버 재시작 필요',
-    V07_LOAD_ERROR && V07_LOAD_ERROR.message ? V07_LOAD_ERROR.message : null);
-}
-
 // ──────────────────────── 메인 서버 ────────────────────────
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -1735,11 +1668,6 @@ const server = http.createServer(async (req, res) => {
           uptime_ms: Date.now() - SERVER_BOOT_TIME,
           version: SERVER_VERSION,
           claude_timeout_ms: (function(){ try { return loadConfig().claude_timeout_ms; } catch (_) { return null; } })(),
-          higgsfield_mode: (function(){ try { return loadConfig().higgsfield_mode || 'claude'; } catch (_) { return null; } })(),
-        },
-        v07: {
-          ok: !!V07,
-          error: V07_LOAD_ERROR ? (V07_LOAD_ERROR.message || String(V07_LOAD_ERROR)) : null,
         },
         jobs: { total: JOBS.size, ...jobCounts },
       });
@@ -1819,30 +1747,6 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-
-    // ──────── v0.7 — Higgsfield MCP 기반 워크플로우 ────────
-    // V07 mount 실패 시 일관된 503 응답 (메인 API는 그대로 떠 있음)
-    if (pathname.startsWith('/api/v07/')) {
-      if (!V07) return sendV07Unavailable(res);
-      if (method === 'POST' && pathname === '/api/v07/section-prompts') {
-        return V07.handleSectionPrompts(req, res);
-      }
-      if (method === 'POST' && pathname === '/api/v07/generate-png') {
-        return V07.handleGeneratePng(req, res);
-      }
-      if (method === 'POST' && pathname === '/api/v07/inpaint/open') {
-        return V07.handleInpaintOpen(req, res);
-      }
-      if (method === 'POST' && pathname === '/api/v07/inpaint/apply') {
-        return V07.handleInpaintApply(req, res);
-      }
-      if (method === 'POST' && pathname === '/api/v07/inpaint/rollback') {
-        return V07.handleInpaintRollback(req, res);
-      }
-      if (method === 'GET' && pathname === '/api/v07/slot') {
-        return V07.handleSlotInfo(req, res, url);
-      }
-    }
 
     if (method === 'GET' && pathname.startsWith('/uploads/')) {
       return serveUpload(req, res, pathname);

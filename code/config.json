@@ -50,12 +50,7 @@
   },
   "extractor_domain_path": "C:\\Users\\MYCOM\\Documents\\조현준편집파일 329부터\\클로드코드\\코존워크스페이스\\domains\\상세페이지 제작자",
   "claude_timeout_ms": 1800000,
-  "claude_timeout_ms_comment": "30분. 11슬롯 한 번 claude 호출로 처리 시 Higgsfield MCP 도구 호출이 슬롯당 30~180초 누적 → 6분으론 부족해서 모든 슬롯이 동시에 타임아웃됨. 30분이면 reference 첨부 슬롯 다수여도 안전. 핫 리로드 적용 — 서버 재시작 없이 callClaude가 매번 읽음.",
+  "claude_timeout_ms_comment": "30분. 핫 리로드 적용 — 서버 재시작 없이 callClaude가 매번 읽음.",
   "max_image_size_mb": 20,
-  "max_total_images": 30,
-  "higgsfield_mode": "claude",
-  "higgsfield_mode_choices": ["claude", "cli", "auto"],
-  "higgsfield_mode_comment": "claude: Claude CLI에 Higgsfield 플러그인/MCP 위임 (사장님 PC 기본). cli: 글로벌 higgsfield CLI 직접 spawn. auto: cli 먼저, 실패 시 claude 폴백.",
-  "higgsfield_dry_check": true,
-  "higgsfield_dry_check_comment": "true: generate-png 직전 짧은 dry-run으로 Claude 세션에 Higgsfield MCP가 노출돼 있는지 사전 확인. false: 사전 점검 생략 (11슬롯 비싸게 돌고 다 실패하는 사고 위험)."
+  "max_total_images": 30
 }

@@ -69,7 +69,7 @@ claude
 > **SETUP_FOR_CLAUDE.md 보고 셋업 진행해줘**
 
 → Claude Code 가 `scripts/setup.mjs` + `scripts/check-auth.mjs` 를 자동 실행하고,
-Higgsfield/Claude CLI/GitHub 인증 같은 **사장님이 직접 해야 하는 단계** 만 사장님께 안내합니다.
+Claude CLI/GitHub 인증 같은 **사장님이 직접 해야 하는 단계** 만 사장님께 안내합니다.
 
 자세한 절차는 [SETUP_FOR_CLAUDE.md](./SETUP_FOR_CLAUDE.md) 참조.
 

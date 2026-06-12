@@ -17,11 +17,11 @@
 | Claude Code 가 직접 할 일 | 사장님께 안내해서 시킬 일 |
 |---|---|
 | `node scripts/setup.mjs --json` 실행 | `claude` 첫 로그인 |
-| `node scripts/check-auth.mjs --json` 실행 | `higgsfield auth login` |
-| 결과 JSON 파싱해서 nextActions 정리 | `gh auth login` (선택) |
-| `code/config.json` 경로 자동 치환 | Node.js 설치 (만약 없으면) |
-| `code/uploads/.gitkeep` 등 dir 보장 | Higgsfield CLI 설치 (만약 없으면) |
-| 사장님께 진행 상황 보고 | 필요 시 인증/설치 명령 직접 실행 |
+| `node scripts/check-auth.mjs --json` 실행 | `gh auth login` (선택) |
+| 결과 JSON 파싱해서 nextActions 정리 | Node.js 설치 (만약 없으면) |
+| `code/config.json` 경로 자동 치환 | 필요 시 인증/설치 명령 직접 실행 |
+| `code/uploads/.gitkeep` 등 dir 보장 | |
+| 사장님께 진행 상황 보고 | |
 
 **핵심**: Claude Code 는 매 단계 후 **사장님이 직접 처리해야 하는 명령이 있다면 한국어 정중체로 명시적으로 안내**합니다. 임의로 사장님 credential 을 입력하거나 인증 명령을 자동 실행하지 마세요.
 
@@ -76,8 +76,9 @@ node scripts/check-auth.mjs --json
 | Node.js | 필수 | 서버 실행 |
 | npm | 필수 | 의존성 |
 | Claude Code CLI (`claude`) | 필수 | 카피·HTML 생성 (server.js 가 spawn 함) |
-| Higgsfield CLI (`higgsfield`) | 권장 | 이미지/영상 생성 (글로벌 스킬 호출용) |
 | GitHub CLI (`gh`) | 권장 | repo pull/push |
+
+> 이미지는 ChatGPT 웹(사장님 구독)에서 만들어 Step 3 슬롯에 업로드합니다. 별도 CLI 없음.
 
 **Claude Code 가 할 일:**
 - 위 명령을 실행
@@ -93,28 +94,6 @@ node scripts/check-auth.mjs --json
 > 설치 후 PowerShell에서 `claude --version` 이 동작하는지 확인해주세요.
 > 첫 실행 시 로그인 안내가 뜨면 사장님 Anthropic 계정으로 로그인하시면 됩니다.
 > 완료되면 알려주세요. 점검을 다시 돌리겠습니다."
-
-#### Higgsfield CLI 없음
-> "사장님, 이미지/영상 생성 기능을 사용하시려면 Higgsfield CLI 가 필요합니다.
-> 다음 명령을 사장님 PowerShell에서 직접 실행해주세요:
->
-> ```
-> npm install -g @higgsfield-ai/cli
-> higgsfield auth login
-> ```
->
-> 사장님 Higgsfield Plus 구독 계정으로 로그인해주시면 됩니다.
-> 완료되면 알려주세요."
-
-#### Higgsfield 설치됨, 로그인 안 됨
-> "사장님, Higgsfield CLI 는 설치되어 있지만 로그인이 안 되어 있습니다.
-> PowerShell 에서 다음을 실행해주세요:
->
-> ```
-> higgsfield auth login
-> ```
->
-> 사장님 Higgsfield Plus 구독 계정으로 로그인 후 알려주세요."
 
 #### GitHub CLI 없음 (선택)
 > "사장님, GitHub CLI 는 필수는 아니지만, 설치하시면 두 PC 간 동기화 (`git pull`/`push`) 가 편해집니다.
@@ -164,7 +143,6 @@ node scripts/check-auth.mjs --json
 ✅ npm install 완료
 ✅ Playwright Chromium 설치
 ✅ Claude Code CLI 인증
-✅ Higgsfield CLI 설치/인증 (사용 시)
 ✅ GitHub CLI (선택)
 ✅ 서버 시작 방법 안내
 ```
@@ -182,10 +160,8 @@ node scripts/check-auth.mjs --json
    - `code/config.json` 의 절대경로가 현재 PC 와 안 맞음 → `node scripts/setup.mjs --skip-npm --skip-playwright` 로 경로 재치환
    - `claude` CLI 미설치 → check-auth.mjs 재실행
 
-### "Higgsfield 생성이 실패해요"
-1. `higgsfield auth status` 사장님께 실행 요청 — 만료된 토큰일 수 있음
-2. Plus 구독 만료 가능성도 사장님께 안내
-3. `code/config.json` 의 `higgsfield_mode` 가 `"claude"` 면 글로벌 스킬 위임 (CLAUDE.md 참고), `"cli"` 면 직접 spawn
+### "이미지가 안 만들어져요"
+이 도구는 이미지 생성을 안 합니다. Step 2의 영문 프롬프트를 들고 ChatGPT 웹(사장님 구독)에서 만들어 Step 3 슬롯에 업로드해 주세요. 「🖼️ ChatGPT 새 탭에서 열기」 버튼 클릭 시 프롬프트가 자동으로 클립보드에 복사됩니다.
 
 ### "한글이 깨져요"
 1. 사장님 PowerShell 이 UTF-8 인지 확인 — `chcp 65001` 실행
@@ -201,8 +177,8 @@ git pull
 
 ## 8. 자주 묻는 질문 (Claude Code 도 참고)
 
-**Q. 사장님이 "Higgsfield 설치는 안 할래" 라고 하시면?**
-A. `code/config.json` 의 `higgsfield_mode` 를 `"claude"` 로 두고 진행. Claude Code 글로벌 스킬(`/higgsfield:generate` 등) 이 호출을 처리합니다. CLI 가 없어도 동작합니다.
+**Q. 이미지 생성은 어디서 하나요?**
+A. 이 도구는 카피·HTML 만 생성하고 이미지는 ChatGPT 웹(사장님 구독)에서 직접 만듭니다. Step 2에서 영문 프롬프트를 받아 ChatGPT에 붙여넣어 만든 PNG를 Step 3 슬롯에 업로드하면 그 다음은 도구가 자동 처리합니다.
 
 **Q. 사장님이 다른 폴더 경로에 클론하셨다면?**
 A. `node scripts/setup.mjs` 가 `config.json` 의 절대경로를 자동으로 현재 PC 경로로 치환합니다. 사장님이 별도로 손댈 필요 없음.
@@ -218,7 +194,7 @@ A. 안전합니다. 멱등(idempotent) 하게 설계되어 있어 여러 번 돌
 ## 9. 사장님 안전 규칙 (Claude Code 절대 위반 X)
 
 - `memory/`, `CLAUDE.md`, `.claude/agents/`, `settings.json` **자동 수정·삭제 금지** (사장님 운영 지침이므로)
-- 사장님 credential (Anthropic API key, Higgsfield 토큰 등) **저장·조회 시도 금지**
+- 사장님 credential (Anthropic API key 등) **저장·조회 시도 금지**
 - `git push --force`, `git reset --hard`, `rm -rf` **명시 지시 없으면 금지**
 - 셋업 중 에러 발생 시 **임의 우회 금지** — 사장님께 상황 보고하고 지시 대기
 

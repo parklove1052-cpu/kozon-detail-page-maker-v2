@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- v0.7.9 강력 캐시 무력화 + 백업 redirect (JS 비활성 케이스에도 작동) -->
+  <!-- 강력 캐시 무력화 + 백업 redirect (JS 비활성 케이스에도 작동) -->
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
@@ -61,7 +61,7 @@
   </div>
 
   <!-- build 식별자 — 캐시 진단용. 사장님이 화면에서 즉시 어느 버전인지 보입니다. -->
-  <div id="build-tag">v0.7.9 · 2026-06-03 22:30</div>
+  <div id="build-tag">v0.8.0 · 2026-06-10 (Higgsfield 제거 · ChatGPT 흐름)</div>
 
   <!-- 서버 OFF 시 친화 안내 화면 -->
   <div id="offline">
@@ -97,11 +97,8 @@
   <script>
     'use strict';
     // ════════════════════════════════════════════════════════════════
-    //  v0.7.8 — iframe 폐기 + 자체 redirect 패턴
-    //  · file:// 부모 + http:// 자식 iframe cross-origin이 drag-drop 차단해서 폐기
-    //  · 서버 OK → window.location.replace로 http://127.0.0.1:7777/index.html로 자체 이동
-    //    → 모든 게 동일 origin (http://127.0.0.1:7777) → drag-drop · 캐시 무효화 · 모든 기능 정상
-    //  · 서버 OFF → 현재 페이지에 fallback 안내 표시 + 자동 재시도
+    //  진입점: 서버 health probe → OK면 http://127.0.0.1:7777/index.html로 자체 이동
+    //  서버 OFF면 fallback 안내 + 자동 재시도. 동일 origin으로 가야 drag-drop·캐시 무효화 정상.
     // ════════════════════════════════════════════════════════════════
     var SERVER_URL = 'http://127.0.0.1:7777';
     var HEALTH_URL = SERVER_URL + '/api/health';

@@ -128,8 +128,8 @@ if (flags.skipPlaywright) {
     execSync('npx playwright install chromium', { cwd: CODE_DIR, stdio: flags.json ? 'pipe' : 'inherit' });
     step('Playwright Chromium', 'ok');
   } catch (e) {
-    // Playwright 실패는 치명적 아님 (Higgsfield 캡처는 사용 안 할 수도)
-    step('Playwright Chromium', 'skip', '설치 실패 — 캡처 기능 사용 시 수동 설치 필요');
+    // Playwright 실패는 치명적 아님 (JPEG 캡처 미사용 시)
+    step('Playwright Chromium', 'skip', '설치 실패 — JPEG 캡처 기능 사용 시 수동 설치 필요');
     result.nextActions.push({
       type: 'manual',
       message: 'Playwright 자동 설치가 실패했습니다. JPEG 캡처 기능을 사용하려면 code/ 에서 "npx playwright install chromium" 을 수동 실행해주세요.',

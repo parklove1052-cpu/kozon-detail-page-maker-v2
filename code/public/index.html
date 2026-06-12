@@ -111,63 +111,41 @@
         </div>
       </div>
 
-      <!-- ──────── Step 2. 이미지 슬롯 승인 (v0.7) ──────── -->
+      <!-- ──────── Step 2. 이미지 프롬프트 확인 + ChatGPT로 만들기 ──────── -->
       <div class="step" id="step-2" data-locked="true">
         <div class="step__head">
           <span class="step__badge"><span class="step__badge-num">2</span></span>
-          <span class="step__title">이미지 슬롯 승인</span>
-          <span class="step__hint">(슬롯별로 ✓ 승인 / ✗ 거절 — Higgsfield가 자동 생성)</span>
+          <span class="step__title">이미지 프롬프트 + ChatGPT로 만들기</span>
+          <span class="step__hint">(슬롯별 영문 프롬프트 확인 → ChatGPT에서 이미지 생성)</span>
         </div>
 
         <div id="plan-summary" class="plan-summary" hidden></div>
 
-        <div class="approval-toolbar" id="approval-toolbar" hidden>
-          <div class="approval-summary" id="approval-summary">
-            총 <span id="approval-total">0</span>개 ·
-            <span class="approval-summary__ok"><span id="approval-approved">0</span> 승인</span> ·
-            <span class="approval-summary__bad"><span id="approval-rejected">0</span> 거절</span>
+        <div class="prompt-toolbar" id="prompt-toolbar" hidden>
+          <div class="prompt-summary">
+            슬롯 <span id="prompt-total">0</span>개 · ChatGPT에서 만든 이미지를 Step 3 슬롯에 업로드해 주세요
           </div>
-          <div class="approval-toolbar__actions">
-            <button id="btn-approve-all" class="btn btn--ghost">전체 승인</button>
-            <button id="btn-reject-all" class="btn btn--ghost">전체 거절</button>
-            <button id="btn-higgsfield-generate" class="btn btn--primary">🎨 Higgsfield 일괄 생성 →</button>
+          <div class="prompt-toolbar__actions">
+            <button id="btn-copy-all-prompts" class="btn btn--ghost">📋 모든 영문 프롬프트 복사</button>
+            <button id="btn-download-prompts" class="btn btn--ghost">⤓ .txt 다운로드</button>
+            <button id="btn-open-chatgpt" class="btn btn--primary">🖼️ ChatGPT 새 탭에서 열기 →</button>
           </div>
         </div>
 
-        <div id="approval-grid" class="approval-grid"></div>
-
-        <details class="prompt-fallback" id="prompt-fallback" hidden>
-          <summary>📋 영문 프롬프트 보기 (수동 ChatGPT 사용 시)</summary>
-          <div class="result-toolbar">
-            <button id="btn-copy-all-prompts" class="btn btn--ghost">📋 모든 영문 프롬프트 복사</button>
-            <button id="btn-download-prompts" class="btn btn--ghost">⤓ .txt 다운로드</button>
-          </div>
-          <div id="prompt-cards" class="prompt-cards"></div>
-        </details>
+        <div id="prompt-cards" class="prompt-cards"></div>
       </div>
 
-      <!-- ──────── Step 3. 자동 생성 결과 (v0.7) ──────── -->
+      <!-- ──────── Step 3. ChatGPT 결과 이미지 업로드 ──────── -->
       <div class="step" id="step-3" data-locked="true">
         <div class="step__head">
           <span class="step__badge"><span class="step__badge-num">3</span></span>
-          <span class="step__title">자동 생성 결과</span>
-          <span class="step__hint">(승인 슬롯 → Higgsfield → PNG · 필요한 컷만 ✏️ Inpaint 또는 🔄 재생성)</span>
+          <span class="step__title">ChatGPT 결과 이미지 업로드</span>
+          <span class="step__hint">(ChatGPT에서 만든 PNG를 슬롯별로 끌어다 놓거나 클릭)</span>
         </div>
 
-        <div id="generation-status" class="generation-status" hidden>
-          <div class="generation-status__msg" id="generation-status-msg">대기 중…</div>
-          <div class="generation-progress"><div class="generation-progress__fill" id="generation-progress-fill"></div></div>
-        </div>
-
-        <p class="muted" id="slot-progress">Step 2에서 슬롯을 승인 후 「Higgsfield 일괄 생성」 버튼을 누르세요. 자동 생성된 PNG가 여기 표시됩니다.</p>
+        <p class="muted" id="slot-progress">Step 2 영문 프롬프트로 ChatGPT에서 만든 이미지를 아래 슬롯에 채워주세요. 슬롯이 다 채워지면 Step 4 ② 버튼이 활성화됩니다.</p>
 
         <div id="slot-grid" class="slot-grid"></div>
-
-        <details class="manual-upload-fallback" id="manual-upload-fallback">
-          <summary>📎 수동 업로드로 진행 (외부 도구로 직접 만든 이미지가 있다면)</summary>
-          <p class="muted">아래 슬롯에 직접 이미지를 드래그/클릭으로 업로드하면 자동 생성 결과 대신 이 이미지가 쓰입니다.</p>
-          <div id="manual-slot-grid" class="slot-grid slot-grid--manual"></div>
-        </details>
       </div>
 
       <!-- ──────── Step 4. 최종 생성 ──────── -->
@@ -325,38 +303,6 @@
 
   <!-- 토스트 알림 -->
   <div id="toast-container" class="toast-container"></div>
-
-  <!-- Inpaint 모달 (v0.7) -->
-  <div id="inpaint-modal" class="inpaint-modal" hidden>
-    <div class="inpaint-modal__card">
-      <button id="inpaint-modal-close" class="inpaint-modal__close" type="button" title="닫기">✕</button>
-      <h3 id="inpaint-modal-title">✏️ 슬롯 수동 수정</h3>
-      <p class="inpaint-modal__sub" id="inpaint-modal-sub">Higgsfield Inpaint에서 수정 후 결과를 여기로 가져오세요</p>
-
-      <div class="inpaint-modal__preview">
-        <img id="inpaint-modal-img" alt="" />
-      </div>
-
-      <ol class="inpaint-modal__steps">
-        <li>아래 「Higgsfield Inpaint 열기」 클릭 — 이미지가 클립보드에 자동 복사되고 새 탭이 열립니다</li>
-        <li>Higgsfield 화면에서 <b>Ctrl+V</b> → 영역 칠하기 → 프롬프트 입력 → 생성</li>
-        <li>결과를 우클릭 「이미지 복사」 또는 다운로드</li>
-        <li>이 모달로 돌아와 아래 영역에 <b>드래그</b> 또는 <b>Ctrl+V</b></li>
-      </ol>
-
-      <button id="btn-open-higgsfield" class="btn btn--primary inpaint-modal__open">▶ Higgsfield Inpaint 열기 + 클립보드 복사</button>
-
-      <label class="inpaint-modal__label">수정된 PNG 받기</label>
-      <div id="inpaint-dropzone" class="inpaint-modal__drop">
-        여기에 드래그 또는 <b>Ctrl+V</b>로 붙여넣기
-      </div>
-
-      <div class="inpaint-modal__actions">
-        <button id="btn-inpaint-rollback" class="btn btn--ghost">⏮ 이전 버전으로</button>
-        <button id="btn-inpaint-cancel" class="btn btn--ghost">취소</button>
-      </div>
-    </div>
-  </div>
 
   <script>
     // 캐시 무효화 — 서버 boot_time을 가져와 app.js URL에 ?v= 부착 (브라우저 강제 새 버전)

@@ -97,12 +97,8 @@ const state = {
   attachedPathMap: {},     // 서버에 저장된 절대 경로 → 원본 dataUrl 매핑 (썸네일 표시용)
   lastGeneratedHTML: null,
   viewMode: 'code', // 'code' | 'preview'
-  inflight: {},     // 동일 액션 중복 클릭 방지 플래그 — { plan: bool, generate: bool, extract: bool, jpeg: bool, higgsfield: bool }
-  // v0.7 — Higgsfield 자동 생성
-  slug: null,                 // 현재 세션 slug (output 폴더명)
-  approvalSlots: [],          // [{ id, sectionIndex, sectionName, koDesc, enPrompt, model, ratio, approved, status, error }]
-  generateJobId: null,
-  currentInpaintSlot: null,   // Inpaint 모달이 작업 중인 슬롯 id
+  inflight: {},     // 동일 액션 중복 클릭 방지 플래그 — { plan: bool, generate: bool, extract: bool, jpeg: bool }
+  slug: null,       // 현재 세션 slug (output 폴더명)
 };
 
 // 경로 비교용 정규화 (백슬래시/슬래시 + 대소문자 차이 흡수)
@@ -225,12 +221,7 @@ async function pingServer() {
       dot.classList.remove('dot--err', 'dot--idle');
       dot.classList.add('dot--ok');
       const bootStr = serverInfoCache?.boot_time ? new Date(serverInfoCache.boot_time).toLocaleString('ko-KR') : '?';
-      dot.title = `서버 ${sv} · 부팅 ${bootStr} · higgsfield_mode=${serverInfoCache?.higgsfield_mode || '?'}`;
-    }
-    // v07 핸들러 비활성 알림
-    if (data.v07 && data.v07.ok === false && !window.__v07WarnedOnce) {
-      window.__v07WarnedOnce = true;
-      toast(`⚠ v0.7 Higgsfield 워크플로우 비활성 — ${data.v07.error || '서버 콘솔 확인'}`, 'error', 9000);
+      dot.title = `서버 ${sv} · 부팅 ${bootStr}`;
     }
     markServerOnline();
   } catch (err) {
@@ -511,10 +502,6 @@ function setupDropzone(kind) {
 // 마지막으로 hover/클릭된 dropzone으로 보냄. 기본은 'product'.
 function setupPaste() {
   window.addEventListener('paste', async (e) => {
-    // Inpaint 모달이 열려있으면 모달 paste 핸들러가 stopImmediatePropagation으로 차단하지만,
-    // 안전망으로 여기서도 한 번 더 가드 (capture 단계 핸들러가 어떤 이유로 실패해도 두 번 처리되지 않게)
-    const inpaintModal = document.getElementById('inpaint-modal');
-    if (inpaintModal && !inpaintModal.hidden) return;
     const active = document.activeElement;
     if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
       return;
@@ -626,26 +613,22 @@ async function callPlan() {
       const src = state.referenceImages[i];
       if (src) state.attachedPathMap[normalizePath(p)] = { dataUrl: src.dataUrl, name: src.name, kind: 'reference' };
     });
-    // v0.7 — Step unlock을 렌더링보다 먼저 호출. 렌더가 부분 실패해도 사장님이 Step 2 만질 수 있게.
+    // Step unlock을 렌더링보다 먼저 호출. 렌더가 부분 실패해도 사장님이 Step 2 만질 수 있게.
     showStep(1, 'done');
     showStep(2, 'unlock');
     showStep(3, 'unlock');
     showStep(4, 'unlock');
-    // 슬롯 메타 추출 + 슬러그 생성 (output 폴더명) — 각각 try/catch로 격리해 한쪽 실패가 다른 쪽 막지 않게
     try {
       state.slug = makeSessionSlug(data.plan);
-      state.approvalSlots = buildApprovalSlotsFromPlan(data.plan);
     } catch (e) {
-      console.error('[plan] 슬롯 메타 추출 실패:', e);
-      state.approvalSlots = [];
+      console.error('[plan] 슬러그 생성 실패:', e);
     }
-    try { renderApprovalGrid(); } catch (e) { console.error('[plan] renderApprovalGrid 실패:', e); }
     try { renderPlanCards(data.plan); } catch (e) { console.error('[plan] renderPlanCards 실패:', e); }
     try { renderManualSlotCards(data.plan); } catch (e) { console.error('[plan] renderManualSlotCards 실패:', e); }
-    // 부드러운 스크롤로 Step 2 안내
     document.querySelector('#step-2')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    if (state.approvalSlots.length) {
-      toast(`기획 완성 — ${state.approvalSlots.length}개 이미지 슬롯. 승인 후 Higgsfield로 일괄 생성하세요.`, 'success', 3500);
+    const slotCount = (data.plan?.image_requests || []).length;
+    if (slotCount) {
+      toast(`기획 완성 — ${slotCount}개 이미지 프롬프트. ChatGPT에서 만들어 Step 3 슬롯에 채워주세요.`, 'success', 4000);
     } else {
       toast('기획 완성 — 이번 기획은 새 이미지 생성이 필요 없습니다.', 'success', 3500);
     }
@@ -659,10 +642,10 @@ async function callPlan() {
 
 // ────────── Step 2 렌더링 — 기획 요약 + 프롬프트 카드 ──────────
 function renderPlanCards(plan) {
-  // 핵심 셀렉터 null-safe (v0.7.2 마크업 교체로 #prompt-toolbar 제거됨 — 옛 fallback 흐름과 호환)
+  // 핵심 셀렉터 null-safe
   const summaryEl = $('#plan-summary');
   const cards = $('#prompt-cards');
-  const toolbar = $('#prompt-toolbar');  // v0.7.2부터 null. fallback details 안의 .result-toolbar로 대체.
+  const toolbar = $('#prompt-toolbar');
   if (!cards) {
     // fallback details 자체가 없으면 렌더 skip (Step 2가 잠기지 않게 throw 안 함)
     return;
@@ -682,6 +665,7 @@ function renderPlanCards(plan) {
     return;
   }
   if (toolbar) toolbar.hidden = false;
+  const totalEl = $('#prompt-total'); if (totalEl) totalEl.textContent = String(reqs.length);
   reqs.forEach((req, i) => {
     const card = document.createElement('div');
     card.className = 'prompt-card';
@@ -783,10 +767,31 @@ function downloadPromptsTxt() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// ────────── Step 3 (fallback) — 수동 업로드 드롭존 그리드 ──────────
-// v0.7: 메인은 자동 생성 결과 그리드. 이건 details fallback 안에서만 동작.
+// ChatGPT 새 탭 열기 — 모든 영문 프롬프트를 클립보드에 복사한 뒤 ChatGPT 이미지 생성 화면 새 탭 오픈.
+// 사장님은 ChatGPT 입력란에 Ctrl+V 하시면 됨. 만든 이미지를 Step 3 슬롯에 드래그 업로드.
+async function openChatGPTNewTab() {
+  const reqs = state.plan?.image_requests || [];
+  if (!reqs.length) {
+    toast('먼저 ① 기획 + 이미지 프롬프트 생성을 진행해 주세요', 'error');
+    return;
+  }
+  try {
+    await copyToClipboard(
+      reqs.map((r, i) =>
+        `=== ${i + 1}. ${r.role_ko || r.slug} (slug: ${r.slug}) ===\n[${r.aspect || ''} ${r.size_hint || ''}]\n${r.prompt_en || ''}\n`
+      ).join('\n')
+    );
+    toast(`📋 ${reqs.length}개 프롬프트 복사됨 — ChatGPT 새 탭에서 Ctrl+V로 붙여넣기`, 'success', 4000);
+  } catch (_) {
+    toast('클립보드 복사 실패 — ChatGPT 새 탭만 엽니다. 직접 「모든 영문 프롬프트 복사」 버튼을 눌러주세요', 'info', 5000);
+  }
+  window.open('https://chatgpt.com/', '_blank', 'noopener');
+}
+
+// ────────── Step 3 — ChatGPT 결과 이미지 업로드 슬롯 그리드 ──────────
+// 메인 #slot-grid 에 렌더. (구버전 #manual-slot-grid 도 fallback으로 지원)
 function renderManualSlotCards(plan) {
-  const grid = $('#manual-slot-grid');
+  const grid = $('#slot-grid') || $('#manual-slot-grid');
   if (!grid) return;
   grid.innerHTML = '';
   const reqs = Array.isArray(plan?.image_requests) ? plan.image_requests : [];
@@ -814,11 +819,7 @@ function renderManualSlotCards(plan) {
 // 하위호환 — 기존 호출 지점이 있을 수 있으므로 별칭 유지
 function renderSlotCards(plan) { return renderManualSlotCards(plan); }
 
-// ═════════════════════════════════════════════════════════════
-// v0.7 — Higgsfield 자동 생성 흐름 (Step 2 승인 → Step 3 결과)
-// ═════════════════════════════════════════════════════════════
-
-// slug sanitize — 서버 inpaintStore.assertSafeName 정책과 일치 ([a-zA-Z0-9._\-가-힣], 80자)
+// slug sanitize — 안전한 폴더명/파일명 정책 ([a-zA-Z0-9._\-가-힣], 80자)
 function sanitizeSlotIdClient(raw, fallback) {
   const s = String(raw == null ? '' : raw)
     .replace(/[\\/]/g, '_')
@@ -836,515 +837,6 @@ function makeSessionSlug(plan) {
     ? sanitizeSlotIdClient(fromPlan, '')
     : `session_${new Date().toISOString().replace(/[:.TZ\-]/g, '').slice(0, 14)}`;
   return base || `session_${Date.now()}`;
-}
-
-// plan.image_requests → 승인 슬롯 메타 변환
-function buildApprovalSlotsFromPlan(plan) {
-  const reqs = Array.isArray(plan?.image_requests) ? plan.image_requests : [];
-  return reqs.map((req, idx) => {
-    const rawId = req.slug || `slot_${String(idx + 1).padStart(2, '0')}`;
-    const id = sanitizeSlotIdClient(rawId, `slot_${String(idx + 1).padStart(2, '0')}`);
-    // aspect "1:1" 형식 유지, 아니면 3:4 기본
-    const ratio = /^\d+:\d+$/.test(String(req.aspect || '').trim()) ? req.aspect.trim() : '3:4';
-    return {
-      id,
-      originalSlug: req.slug || id,   // /api/generate의 image_slug 매칭용 — sanitize 전 원본
-      sectionIndex: req.section_n || (idx + 1),
-      sectionName: req.role_ko || req.slug || `섹션 ${idx + 1}`,
-      koDesc: req.prompt_kr || req.role_ko || req.slug || `섹션 ${idx + 1} 이미지`,
-      enPrompt: req.prompt_en || '',
-      model: 'gpt-image-2',
-      ratio,
-      // v0.7.10 — 사장님 첨부 사진을 Higgsfield 호출까지 전달.
-      // plan에서 Claude가 product_based/reference_based 슬롯에 사장님 사진 경로를
-      // attach_image_path로 매핑해놨는데, 이전 코드는 그 정보를 누락해 Higgsfield가
-      // 사장님 사진 모르고 새 이미지만 생성. 이제 슬롯에 보존해 generate-png 호출 시 전달.
-      promptMode: req.prompt_mode || (req.attach_image_path ? 'attached' : 'new_image'),
-      attachImagePath: req.attach_image_path || null,
-      approved: true,             // 기본 전체 승인 (사장님은 거절할 것만 빠르게 ✗)
-      status: 'pending',          // pending | generating | success | failed
-      error: null,
-    };
-  });
-}
-
-function refreshApprovalSummary() {
-  const total = state.approvalSlots.length;
-  const ok = state.approvalSlots.filter(s => s.approved === true).length;
-  const bad = state.approvalSlots.filter(s => s.approved === false).length;
-  $('#approval-total') && ($('#approval-total').textContent = total);
-  $('#approval-approved') && ($('#approval-approved').textContent = ok);
-  $('#approval-rejected') && ($('#approval-rejected').textContent = bad);
-  const btn = $('#btn-higgsfield-generate');
-  if (btn) btn.disabled = ok === 0;
-}
-
-function renderApprovalGrid() {
-  const grid = $('#approval-grid');
-  const toolbar = $('#approval-toolbar');
-  const fallback = $('#prompt-fallback');
-  if (!grid) return;
-  grid.innerHTML = '';
-  if (!state.approvalSlots.length) {
-    grid.innerHTML = '<p class="muted">이번 기획에는 새로 만들 이미지가 없습니다. 바로 Step 4로 진행하세요.</p>';
-    if (toolbar) toolbar.hidden = true;
-    if (fallback) fallback.hidden = true;
-    return;
-  }
-  if (toolbar) toolbar.hidden = false;
-  if (fallback) fallback.hidden = false;
-  state.approvalSlots.forEach((slot, idx) => {
-    const card = document.createElement('div');
-    card.className = 'approval-card' + (slot.approved === true ? ' is-approved' : slot.approved === false ? ' is-rejected' : '');
-    card.dataset.id = slot.id;
-    card.innerHTML = `
-      <div class="approval-card__idx">${String(slot.sectionIndex || (idx + 1)).padStart(2, '0')}</div>
-      <div class="approval-card__body">
-        <div class="approval-card__name">${escapeHTML(slot.sectionName || slot.id)}</div>
-        <div class="approval-card__desc">${escapeHTML(slot.koDesc || '(설명 없음)')}</div>
-        <div class="approval-card__meta">
-          <span>모델:</span>
-          <select data-field="model">
-            <option value="gpt-image-2"${slot.model === 'gpt-image-2' ? ' selected' : ''}>GPT Image 2</option>
-            <option value="soul-2"${slot.model === 'soul-2' ? ' selected' : ''}>Soul 2.0</option>
-            <option value="nano-banana-pro"${slot.model === 'nano-banana-pro' ? ' selected' : ''}>Nano Banana Pro</option>
-            <option value="seedream-4"${slot.model === 'seedream-4' ? ' selected' : ''}>Seedream 4</option>
-            <option value="flux-2-pro"${slot.model === 'flux-2-pro' ? ' selected' : ''}>Flux 2 Pro</option>
-          </select>
-          <span style="margin-left:6px;">비율:</span>
-          <select data-field="ratio">
-            <option value="3:4"${slot.ratio === '3:4' ? ' selected' : ''}>3:4 (세로)</option>
-            <option value="1:1"${slot.ratio === '1:1' ? ' selected' : ''}>1:1 (정사각)</option>
-            <option value="16:9"${slot.ratio === '16:9' ? ' selected' : ''}>16:9 (가로)</option>
-            <option value="2:3"${slot.ratio === '2:3' ? ' selected' : ''}>2:3 (세로)</option>
-            <option value="9:16"${slot.ratio === '9:16' ? ' selected' : ''}>9:16 (모바일)</option>
-            <option value="4:5"${slot.ratio === '4:5' ? ' selected' : ''}>4:5</option>
-          </select>
-        </div>
-      </div>
-      <div class="approval-card__actions">
-        <button class="toggle-btn ok${slot.approved === true ? ' active' : ''}" type="button" title="승인">✓</button>
-        <button class="toggle-btn bad${slot.approved === false ? ' active' : ''}" type="button" title="거절">✗</button>
-      </div>
-    `;
-    grid.appendChild(card);
-    card.querySelector('.toggle-btn.ok').addEventListener('click', () => {
-      slot.approved = slot.approved === true ? null : true;
-      renderApprovalGrid();
-    });
-    card.querySelector('.toggle-btn.bad').addEventListener('click', () => {
-      slot.approved = slot.approved === false ? null : false;
-      renderApprovalGrid();
-    });
-    card.querySelector('select[data-field="model"]').addEventListener('change', (e) => {
-      slot.model = e.target.value;
-    });
-    card.querySelector('select[data-field="ratio"]').addEventListener('change', (e) => {
-      slot.ratio = e.target.value;
-    });
-  });
-  refreshApprovalSummary();
-}
-
-function approveAllSlots(value) {
-  state.approvalSlots.forEach(s => { s.approved = value === false ? false : true; });
-  renderApprovalGrid();
-}
-
-// ── Step 3 결과 그리드 (자동 생성 PNG 표시) ──
-function renderResultGrid() {
-  const grid = $('#slot-grid');
-  if (!grid) return;
-  grid.innerHTML = '';
-  const approvedSlots = state.approvalSlots.filter(s => s.approved === true);
-  if (!approvedSlots.length) {
-    grid.innerHTML = '<p class="muted">승인된 슬롯이 없습니다. Step 2에서 슬롯을 ✓ 해주세요.</p>';
-    return;
-  }
-  approvedSlots.forEach((slot) => {
-    const card = document.createElement('div');
-    const stateCls = slot.status === 'success' ? ' is-success'
-                   : slot.status === 'failed'  ? ' is-failed'
-                   : slot.status === 'generating' ? ' is-generating'
-                   : '';
-    card.className = 'slot-card' + stateCls;
-    card.dataset.slug = slot.id;
-
-    // 자동 생성된 PNG가 있으면 미리보기, 없으면 placeholder
-    const haveImage = state.slotImages[slot.originalSlug || slot.id]?.dataUrl;
-    const previewHtml = haveImage
-      ? `<img src="${haveImage}" alt="${escapeHTML(slot.sectionName)}">`
-      : (slot.status === 'failed'
-          ? `<div class="slot-card__error">실패<br>${escapeHTML((slot.error || '알 수 없는 오류').slice(0, 80))}</div>`
-          : (slot.status === 'generating' ? '생성 중…' : '대기'));
-
-    card.innerHTML = `
-      <div class="slot-card__title">${escapeHTML(slot.sectionName || slot.id)}</div>
-      <div class="slot-card__meta">slug · ${escapeHTML(slot.id)}<br>${escapeHTML(slot.ratio || '')}</div>
-      <div class="slot-card__preview">${previewHtml}</div>
-      <div class="slot-card__overlay">
-        ${haveImage ? `<button class="btn--mini" data-action="inpaint" type="button">✏️ 수정</button>` : ''}
-        ${haveImage ? `<button class="btn--mini" data-action="zoom" type="button">⤴ 크게</button>` : ''}
-        <button class="btn--mini" data-action="regen" type="button">🔄 ${haveImage ? '재생성' : '재시도'}</button>
-      </div>
-    `;
-    grid.appendChild(card);
-    card.querySelectorAll('[data-action]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const action = btn.dataset.action;
-        if (action === 'inpaint') openInpaintModal(slot.id);
-        else if (action === 'zoom') zoomSlotImage(slot);
-        else if (action === 'regen') regenerateSingleSlot(slot.id);
-      });
-    });
-  });
-  updateSlotProgress();
-}
-
-function zoomSlotImage(slot) {
-  const dataUrl = state.slotImages[slot.originalSlug || slot.id]?.dataUrl;
-  if (!dataUrl) { toast('이미지 없음', 'error'); return; }
-  const w = window.open('', '_blank');
-  if (!w) { toast('팝업이 차단됐습니다', 'error'); return; }
-  w.document.write(`<title>${escapeHTML(slot.sectionName)} · ${escapeHTML(slot.id)}</title><body style="margin:0;background:#000;display:grid;place-items:center;min-height:100vh"><img src="${dataUrl}" style="max-width:100%;max-height:100vh"></body>`);
-}
-
-function setGenerationStatus(message, pct, show = true) {
-  const box = $('#generation-status');
-  const msg = $('#generation-status-msg');
-  const fill = $('#generation-progress-fill');
-  if (!box) return;
-  box.hidden = !show;
-  if (msg && message != null) msg.textContent = message;
-  if (fill && pct != null) fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
-}
-
-// ── 메인: Higgsfield 일괄 생성 ──
-async function callHiggsfieldGenerate() {
-  if (!state.plan) { toast('먼저 ① 기획을 진행하세요', 'error'); return; }
-  const approved = state.approvalSlots.filter(s => s.approved === true);
-  if (!approved.length) { toast('승인된 슬롯이 없습니다', 'error'); return; }
-  if (!state.slug) state.slug = makeSessionSlug(state.plan);
-
-  const styleKey = $('#style-select')?.value || state.defaultStyle;
-  approved.forEach(s => { s.status = 'generating'; s.error = null; });
-  renderResultGrid();
-  setGenerationStatus(`${approved.length}개 슬롯 생성 요청 중…`, 5);
-  document.querySelector('#step-3')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-  try {
-    const r = await api('/api/v07/generate-png', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        slug: state.slug,
-        style_key: styleKey,
-        slots: approved.map(s => ({
-          id: s.id,
-          sectionName: s.sectionName,
-          enPrompt: s.enPrompt,
-          model: s.model,
-          ratio: s.ratio,
-          // v0.7.10 — 사장님 첨부 사진 정보 (Higgsfield base image로 사용)
-          promptMode: s.promptMode || null,
-          attachImagePath: s.attachImagePath || null,
-        })),
-      }),
-      timeoutMs: 30000,
-    });
-    const initial = await safeJSON(r);
-    if (!r.ok || !initial.ok) {
-      throw new Error((initial.error || `status ${r.status}`) + (initial.detail ? ` (${initial.detail})` : ''));
-    }
-    if (!initial.job_id) throw new Error('job_id 없음');
-    state.generateJobId = initial.job_id;
-    registerActiveJob(initial.job_id);
-    try {
-      const data = await pollJob(initial.job_id, {
-        interval: 1500,
-        maxMs: 30 * 60 * 1000,
-        onProgress: (job) => {
-          const sec = Math.round((job.elapsed_ms || 0) / 1000);
-          // 진행률 추정 — done 전까지는 max 85
-          const pct = Math.min(85, 10 + sec * 1.5);
-          setGenerationStatus(`Higgsfield 생성 중… (${sec}초 / ${approved.length}개 슬롯)`, pct);
-        },
-      });
-      await handleGenerateResult(data, approved);
-    } finally {
-      unregisterActiveJob(initial.job_id);
-    }
-  } catch (err) {
-    console.error('[higgsfield-generate]', err);
-    approved.forEach(s => { if (s.status === 'generating') { s.status = 'failed'; s.error = err.message; } });
-    renderResultGrid();
-    setGenerationStatus(`생성 실패: ${err.message}`, 0);
-    toast(`Higgsfield 생성 실패: ${err.message}`, 'error', 8000);
-  }
-}
-
-// 단일 슬롯 재생성
-async function regenerateSingleSlot(slotId) {
-  const slot = state.approvalSlots.find(s => s.id === slotId);
-  if (!slot) { toast('슬롯 정보 없음', 'error'); return; }
-  slot.status = 'generating';
-  slot.error = null;
-  renderResultGrid();
-  try {
-    const r = await api('/api/v07/generate-png', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        slug: state.slug,
-        style_key: $('#style-select')?.value || state.defaultStyle,
-        slots: [{
-          id: slot.id, sectionName: slot.sectionName, enPrompt: slot.enPrompt,
-          model: slot.model, ratio: slot.ratio,
-          promptMode: slot.promptMode || null,
-          attachImagePath: slot.attachImagePath || null,
-        }],
-      }),
-      timeoutMs: 30000,
-    });
-    const initial = await safeJSON(r);
-    if (!r.ok || !initial.ok || !initial.job_id) throw new Error(initial.error || `status ${r.status}`);
-    registerActiveJob(initial.job_id);
-    try {
-      const data = await pollJob(initial.job_id, { interval: 1500, maxMs: 10 * 60 * 1000 });
-      await handleGenerateResult(data, [slot]);
-    } finally { unregisterActiveJob(initial.job_id); }
-    toast(`${slot.id} 재생성 완료`, 'success', 2500);
-  } catch (err) {
-    slot.status = 'failed';
-    slot.error = err.message;
-    renderResultGrid();
-    toast(`${slot.id} 재생성 실패: ${err.message}`, 'error');
-  }
-}
-
-// 서버 job 결과 → state.slotImages 채움 + 카드 갱신
-async function handleGenerateResult(data, slotsScope) {
-  if (!data || !Array.isArray(data.results)) {
-    setGenerationStatus('서버 응답 형식 오류', 0);
-    return;
-  }
-  let okCount = 0;
-  let failCount = 0;
-  for (const r of data.results) {
-    const slot = slotsScope.find(s => s.id === r.slot) || state.approvalSlots.find(s => s.id === r.slot);
-    if (!slot) continue;
-    if (r.ok) {
-      try {
-        const dataUrl = await fetchPngAsDataUrl(`/output/${encodeURIComponent(state.slug)}/${encodeURIComponent(r.slot)}.png?t=${Date.now()}`);
-        // 키는 plan.image_requests.slug(=originalSlug) 사용 — /api/generate 매칭용
-        state.slotImages[slot.originalSlug || slot.id] = {
-          name: `${slot.id}.png`,
-          dataUrl,
-        };
-        slot.status = 'success';
-        slot.error = null;
-        okCount += 1;
-      } catch (e) {
-        slot.status = 'failed';
-        slot.error = `이미지 다운로드 실패: ${e.message}`;
-        failCount += 1;
-      }
-    } else {
-      slot.status = 'failed';
-      slot.error = r.error || '생성 실패';
-      failCount += 1;
-    }
-  }
-  renderResultGrid();
-  const total = slotsScope.length;
-  const totalSec = Math.round((data.elapsed_ms || 0) / 1000);
-  if (failCount === 0) {
-    setGenerationStatus(`✓ ${okCount}/${total}개 성공 (${totalSec}초)`, 100);
-    toast(`Higgsfield 생성 완료 — ${okCount}개 슬롯`, 'success', 3500);
-  } else {
-    setGenerationStatus(`⚠ 성공 ${okCount} · 실패 ${failCount} (총 ${total}개, ${totalSec}초)`, 100);
-    toast(`일부 실패 — 실패 카드 🔄 재생성으로 다시 시도`, 'info', 5000);
-  }
-}
-
-// 서버에 저장된 /output/.../slot.png → dataURL 변환 (state.slotImages용)
-async function fetchPngAsDataUrl(urlPath) {
-  const resp = await fetch(`${API_BASE}${urlPath}`);
-  if (!resp.ok) throw new Error(`fetch ${resp.status}`);
-  const blob = await resp.blob();
-  return await new Promise((res, rej) => {
-    const fr = new FileReader();
-    fr.onload = () => res(fr.result);
-    fr.onerror = () => rej(fr.error);
-    fr.readAsDataURL(blob);
-  });
-}
-
-// ── Inpaint 모달 ──
-async function openInpaintModal(slotId) {
-  if (!state.slug) { toast('세션 slug 없음', 'error'); return; }
-  state.currentInpaintSlot = slotId;
-  try {
-    const r = await api('/api/v07/inpaint/open', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slug: state.slug, slotId }),
-      timeoutMs: 15000,
-    });
-    const data = await safeJSON(r);
-    if (!r.ok || !data.ok) throw new Error(data.error || `status ${r.status}`);
-    const slot = state.approvalSlots.find(s => s.id === slotId);
-    $('#inpaint-modal-title').textContent = `✏️ ${slot?.sectionName || slotId}`;
-    $('#inpaint-modal-sub').textContent = `슬롯 · ${slotId}`;
-    $('#inpaint-modal-img').src = data.clipboardData;
-    $('#inpaint-modal').hidden = false;
-    // 클립보드 자동 복사 (실패해도 진행)
-    try {
-      const resp = await fetch(data.clipboardData);
-      const blob = await resp.blob();
-      if (navigator.clipboard && navigator.clipboard.write) {
-        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-        toast('클립보드에 이미지 복사됨', 'success', 1800);
-      }
-    } catch (e) {
-      console.warn('[inpaint] 클립보드 복사 실패', e);
-    }
-  } catch (err) {
-    toast(`Inpaint 열기 실패: ${err.message}`, 'error');
-  }
-}
-
-function closeInpaintModal() {
-  $('#inpaint-modal').hidden = true;
-  state.currentInpaintSlot = null;
-}
-
-async function applyInpaintFile(file) {
-  if (!state.currentInpaintSlot) { toast('수정할 슬롯 없음', 'error'); return; }
-  if (!file.type.startsWith('image/')) { toast('이미지가 아닙니다', 'error'); return; }
-  try {
-    const dataUrl = await fileToDataURL(file);
-    const r = await api('/api/v07/inpaint/apply', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        slug: state.slug,
-        slotId: state.currentInpaintSlot,
-        newImageBase64: dataUrl,
-      }),
-      timeoutMs: 30000,
-    });
-    const data = await safeJSON(r);
-    if (!r.ok || !data.ok) throw new Error(data.error || `status ${r.status}`);
-    // state.slotImages 갱신 (cache buster 포함 재 fetch)
-    const slot = state.approvalSlots.find(s => s.id === state.currentInpaintSlot);
-    if (slot) {
-      try {
-        const refreshed = await fetchPngAsDataUrl(`/output/${encodeURIComponent(state.slug)}/${encodeURIComponent(slot.id)}.png?t=${Date.now()}`);
-        state.slotImages[slot.originalSlug || slot.id] = { name: `${slot.id}.png`, dataUrl: refreshed };
-      } catch (_) {
-        // 실패 시 클라이언트가 방금 올린 dataUrl로 fallback
-        state.slotImages[slot.originalSlug || slot.id] = { name: `${slot.id}.png`, dataUrl };
-      }
-      slot.status = 'success';
-    }
-    toast(`v${data.total_versions || '+'}로 교체됨`, 'success');
-    closeInpaintModal();
-    renderResultGrid();
-  } catch (err) {
-    toast(`적용 실패: ${err.message}`, 'error');
-  }
-}
-
-async function rollbackInpaint() {
-  if (!state.currentInpaintSlot) return;
-  try {
-    const infoR = await api(`/api/v07/slot?slug=${encodeURIComponent(state.slug)}&slot=${encodeURIComponent(state.currentInpaintSlot)}`);
-    const info = await safeJSON(infoR);
-    if (!infoR.ok || !info.ok) throw new Error(info.error || `status ${infoR.status}`);
-    if (!info.versions || !info.versions.length) { toast('이전 버전이 없습니다', 'info'); return; }
-    const target = info.versions[info.versions.length - 1].version;
-    const r = await api('/api/v07/inpaint/rollback', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slug: state.slug, slotId: state.currentInpaintSlot, version: target }),
-      timeoutMs: 15000,
-    });
-    const data = await safeJSON(r);
-    if (!r.ok || !data.ok) throw new Error(data.error || `status ${r.status}`);
-    // 다시 받아 상태 갱신
-    const slot = state.approvalSlots.find(s => s.id === state.currentInpaintSlot);
-    if (slot) {
-      const refreshed = await fetchPngAsDataUrl(`/output/${encodeURIComponent(state.slug)}/${encodeURIComponent(slot.id)}.png?t=${Date.now()}`);
-      state.slotImages[slot.originalSlug || slot.id] = { name: `${slot.id}.png`, dataUrl: refreshed };
-    }
-    toast(`v${target}로 복원됨`, 'success');
-    closeInpaintModal();
-    renderResultGrid();
-  } catch (err) {
-    toast(`롤백 실패: ${err.message}`, 'error');
-  }
-}
-
-function setupInpaintModal() {
-  const modal = $('#inpaint-modal');
-  if (!modal) return;
-  $('#inpaint-modal-close')?.addEventListener('click', closeInpaintModal);
-  $('#btn-inpaint-cancel')?.addEventListener('click', closeInpaintModal);
-  $('#btn-inpaint-rollback')?.addEventListener('click', rollbackInpaint);
-  $('#btn-open-higgsfield')?.addEventListener('click', () => {
-    window.open('https://higgsfield.ai/image/inpaint', '_blank');
-    toast('Higgsfield 새 탭 열림 — Ctrl+V로 붙여넣기', 'info', 2500);
-  });
-  // 모달 바깥 클릭 시 닫기
-  modal.addEventListener('click', (e) => { if (e.target === modal) closeInpaintModal(); });
-  // Esc 닫기
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !modal.hidden) closeInpaintModal();
-  });
-  // Dropzone
-  const drop = $('#inpaint-dropzone');
-  if (drop) {
-    ;['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => {
-      e.preventDefault(); e.stopPropagation(); drop.classList.add('is-dragover');
-    }));
-    drop.addEventListener('dragleave', () => drop.classList.remove('is-dragover'));
-    drop.addEventListener('drop', (e) => {
-      e.preventDefault(); e.stopPropagation();
-      drop.classList.remove('is-dragover');
-      const f = e.dataTransfer?.files?.[0];
-      if (f) applyInpaintFile(f);
-    });
-    drop.addEventListener('click', () => {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*';
-      input.addEventListener('change', () => {
-        const f = input.files?.[0];
-        if (f) applyInpaintFile(f);
-      });
-      input.click();
-    });
-  }
-  // Paste — 모달 열려있을 때만. capture 단계로 등록해 setupPaste의 글로벌 핸들러보다 먼저 실행.
-  // 모달 열림 상태에서 이미지 paste 시 inpaint로만 흘러가고, 좌측 dropzone(productImages) paste는 차단.
-  document.addEventListener('paste', (e) => {
-    if (modal.hidden) return;
-    const items = (e.clipboardData || {}).items || [];
-    for (const it of items) {
-      if (it.type && it.type.startsWith('image/')) {
-        const f = it.getAsFile();
-        if (f) {
-          e.preventDefault();
-          e.stopPropagation();
-          // 같은 element에 등록된 후속 listener(setupPaste의 글로벌 paste)도 차단
-          if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-          applyInpaintFile(f);
-          return;
-        }
-      }
-    }
-  }, true);   // ← capture: true
 }
 
 function setupSlotDropzone(card, slug) {
@@ -1480,7 +972,6 @@ async function callDirectGenerate() {
     state.plan = plan;
     state.slotImages = {};
     state.slug = makeSessionSlug(plan);
-    state.approvalSlots = buildApprovalSlotsFromPlan(plan);
     // attachedPathMap 빌드 (혹시 사장님이 결과 영역에서 카드 보게 되면 썸네일 매칭용)
     state.attachedPathMap = {};
     (data.product_image_paths || []).forEach((p, i) => {
@@ -2086,10 +1577,8 @@ function bindEvents() {
   $('#btn-download-prompts')?.addEventListener('click', downloadPromptsTxt);
   $('#btn-download-jpeg')?.addEventListener('click', withInflight('jpeg', '#btn-download-jpeg', downloadJPEG));
 
-  // v0.7 — Higgsfield 일괄 생성 + 일괄 승인 토글
-  $('#btn-higgsfield-generate')?.addEventListener('click', withInflight('higgsfield', '#btn-higgsfield-generate', callHiggsfieldGenerate));
-  $('#btn-approve-all')?.addEventListener('click', () => approveAllSlots(true));
-  $('#btn-reject-all')?.addEventListener('click', () => approveAllSlots(false));
+  // ChatGPT 새 탭 열기 — 영문 프롬프트 자동 클립보드 복사 + ChatGPT 새 탭 오픈
+  $('#btn-open-chatgpt')?.addEventListener('click', openChatGPTNewTab);
 
   $('#btn-copy-html')?.addEventListener('click', () => {
     if (!state.lastGeneratedHTML) {
@@ -2146,7 +1635,6 @@ async function init() {
   safeRun('setupDropzone(reference)', () => setupDropzone('reference'));
   safeRun('setupPaste', setupPaste);
   safeRun('bindEvents', bindEvents);
-  safeRun('setupInpaintModal', setupInpaintModal);
   // 「지금 다시 확인」 버튼
   safeRun('server-offline-retry', () => {
     $('#server-offline-retry')?.addEventListener('click', () => { pingServer(); });
@@ -2166,7 +1654,7 @@ async function init() {
   setInterval(pingServer, 8000);  // 30초→8초: 서버 OFF→ON 빠른 감지
 }
 
-// v0.7.9 — 동적 script 로드 호환 패턴.
+// 동적 script 로드 호환 패턴.
 // index.html이 캐시 무효화를 위해 <script>를 createElement + appendChild로 추가하므로,
 // DOMContentLoaded 이벤트가 이미 발생한 후에 app.js가 실행될 수 있다. 그 경우 addEventListener는
 // 이미 지나간 이벤트에 등록되어 init()이 절대 호출 안 됨 → setupDropzone/loadStyles 모두 미실행
