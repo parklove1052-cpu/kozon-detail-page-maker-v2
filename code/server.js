@@ -100,9 +100,20 @@ function createChatgptParallelJob(projectName, prompts, opts = {}) {
   return job;
 }
 
-function runChatgptParallelJob(job) {
+// Playwright launchPersistentContext는 한 chatgpt-profile에 동시 1인스턴스만 가능
+// → 잡 1개씩 직렬화. 새 잡이 들어오면 진행 중 잡이 끝날 때까지 대기 후 시작.
+let _chatgptChainTail = Promise.resolve();
+function queueChatgptParallelJob(job) {
+  _chatgptChainTail = _chatgptChainTail
+    .catch(() => {}) // 앞 잡 실패해도 다음 진행
+    .then(() => runChatgptParallelJobNow(job));
+  return _chatgptChainTail;
+}
+
+function runChatgptParallelJobNow(job) {
+  if (job.state !== 'pending') return; // 이미 끝났거나 cancel된 잡
   job.state = 'running';
-  getChatgptImageModule()
+  return getChatgptImageModule()
     .then(mod => mod.generateImagesInProjectParallel({
       projectName: job.projectName,
       prompts: job.prompts,
@@ -123,6 +134,11 @@ function runChatgptParallelJob(job) {
       job.error = err.message || String(err);
       console.error('[chatgpt-parallel ' + job.id.slice(0,8) + '] failed: ' + job.error);
     });
+}
+
+function runChatgptParallelJob(job) {
+  // 직렬화 큐로 위임 — SingletonLock 충돌 방지
+  queueChatgptParallelJob(job);
 }
 
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -1864,11 +1880,22 @@ const server = http.createServer(async (req, res) => {
             if (!t) continue;
             let attachPath = null;
             if (item.attachPath && typeof item.attachPath === 'string') {
+              // 1차 normalize 검증
               const candidate = path.normalize(item.attachPath);
               const inUploads = isInside(UPLOADS_DIR, candidate);
               const inGenerated = isInside(GENERATED_DIR_SRV, candidate);
               if ((inUploads || inGenerated) && fs.existsSync(candidate)) {
-                attachPath = candidate;
+                // 2차 realpath 재확인 — symlink/junction escape 방어 (P0와 동일 패턴)
+                try {
+                  const realPath = fs.realpathSync.native(candidate);
+                  if (isInside(UPLOADS_DIR, realPath) || isInside(GENERATED_DIR_SRV, realPath)) {
+                    attachPath = realPath;
+                  } else {
+                    console.warn('[generate-parallel] attachPath rejected (symlink escape):', item.attachPath);
+                  }
+                } catch (e) {
+                  console.warn('[generate-parallel] attachPath realpath failed:', e.message);
+                }
               } else {
                 console.warn('[generate-parallel] attachPath rejected (outside allowed dirs or missing):', item.attachPath);
               }

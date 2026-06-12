@@ -343,10 +343,16 @@ async function enterProject(page, projectName) {
     throw new Error('Sidebar item not found: "' + projectName + '". Diagnostic dumped.');
   }
 
-  await target.scrollIntoViewIfNeeded().catch(() => {});
-  await target.click();
-  // ChatGPT는 프로젝트 진입을 SPA 라우팅으로 처리해 URL이 안 바뀜 — 클릭 후 충분히 대기하면 진입 완료
-  await page.waitForTimeout(3500);
+  // 이미 펼쳐진 상태면 클릭으로 접힐 위험 — 하위 conversation 항목이 이미 보이면 클릭 skip
+  const alreadyExpanded = (await page.$$('a[data-sidebar-item="true"]')).length > 2;
+  if (alreadyExpanded) {
+    console.log('[project] Sidebar already expanded — skip click to avoid toggle');
+  } else {
+    await target.scrollIntoViewIfNeeded().catch(() => {});
+    await target.click();
+    // ChatGPT는 프로젝트 진입을 SPA 라우팅으로 처리해 URL이 안 바뀜 — 클릭 후 충분히 대기하면 진입 완료
+    await page.waitForTimeout(3500);
+  }
   const url = page.url();
   console.log('[project] Entered project (SPA, URL may stay): ' + url);
   return url;
@@ -371,8 +377,33 @@ async function attachImageToInput(page, attachPath, tabIdx) {
       if (el) {
         await el.setInputFiles(attachPath);
         console.log('[tab ' + tabIdx + '] attached image via ' + sel + ' = ' + attachPath);
-        // 첨부 후 ChatGPT가 미리보기 만들 시간
-        await page.waitForTimeout(3000);
+        // 미리보기 thumbnail 또는 첨부 상태 표시 대기 (최대 10초)
+        // ChatGPT 입력 영역 위에 첨부된 이미지 카드/썸네일이 뜸
+        const previewSels = [
+          'img[alt*="첨부"]',
+          'img[alt*="Attached"]',
+          'div[role="img"][aria-label*="첨부"]',
+          'div[role="img"][aria-label*="Attached"]',
+          '[data-testid*="attachment"]',
+          '[data-testid*="attached"]',
+        ];
+        const previewDeadline = Date.now() + 10000;
+        let previewSeen = false;
+        while (Date.now() < previewDeadline) {
+          for (const ps of previewSels) {
+            try {
+              const p = await page.$(ps);
+              if (p && await p.isVisible()) { previewSeen = true; break; }
+            } catch (_) {}
+          }
+          if (previewSeen) break;
+          await page.waitForTimeout(500);
+        }
+        if (previewSeen) {
+          console.log('[tab ' + tabIdx + '] attachment preview confirmed');
+        } else {
+          console.warn('[tab ' + tabIdx + '] attachment preview not confirmed in 10s — proceeding anyway');
+        }
         return true;
       }
     } catch (e) {
@@ -385,10 +416,91 @@ async function attachImageToInput(page, attachPath, tabIdx) {
   return false;
 }
 
+// 프로젝트 진입(사이드바 펼침) 후, 그 안에 펼쳐진 conversation 항목들의 절대 URL을 N개 수집
+// — 새 대화를 만들지 않고 기존 N개 대화를 재활용해 rate-limit 회피
+async function findConversationUrls(page, projectName, count) {
+  console.log('[conv] Collecting up to ' + count + ' conversation URLs under "' + projectName + '"...');
+  // 사이드바 렌더 안정화 — 항목이 count개 이상 잡힐 때까지 폴링 (최대 8초)
+  const deadline = Date.now() + 8000;
+  let anchors = [];
+  let matched = 0;
+  while (Date.now() < deadline) {
+    anchors = await page.$$('a[data-sidebar-item="true"]');
+    // projectName 매치 개수 임시 카운트
+    matched = 0;
+    for (const a of anchors) {
+      try {
+        const label = (await a.getAttribute('aria-label')) || '';
+        if (label.includes(projectName)) matched++;
+      } catch (_) {}
+      if (matched >= count) break;
+    }
+    if (matched >= count) break;
+    await page.waitForTimeout(500);
+  }
+
+  const urls = [];
+  const labels = [];
+  for (const a of anchors) {
+    try {
+      const href  = await a.getAttribute('href');
+      const label = (await a.getAttribute('aria-label')) || '';
+      // aria-label 예시: "제품 강조 배경 변형, 프로젝트 프로젝트(조)의 채팅"
+      if (href && label.includes(projectName)) {
+        const abs = href.startsWith('http') ? href : ('https://chatgpt.com' + href);
+        urls.push(abs);
+        labels.push(label.split(',')[0]);
+        if (urls.length >= count) break;
+      }
+    } catch (_) {}
+  }
+  console.log('[conv] Found ' + urls.length + '/' + count + ' existing conversations: ' + labels.join(' / '));
+  return { urls, labels };
+}
+
+// ChatGPT rate-limit / 대화 한도 모달이 떠 있으면 닫음 (정상 다이얼로그는 건드리지 않음 — testid 한정)
+async function dismissBlockingModals(page, tabIdx) {
+  // 차단성 모달만 testid로 좁혀 식별
+  const blockingTestIds = [
+    'modal-conversation-history-rate-limit',
+    'modal-message-limit',
+    'modal-too-many-requests',
+    'modal-rate-limit',
+  ];
+  for (const tid of blockingTestIds) {
+    try {
+      const m = await page.$('[data-testid="' + tid + '"]');
+      if (m && await m.isVisible()) {
+        console.warn('[tab ' + tabIdx + '] blocking modal detected (' + tid + '), dismissing...');
+        const closers = await m.$$('button[aria-label*="닫기"], button[aria-label*="close"], button[aria-label*="Close"], [data-testid*="close"]');
+        if (closers.length > 0) { await closers[0].click().catch(() => {}); }
+        else { await page.keyboard.press('Escape').catch(() => {}); }
+        await page.waitForTimeout(800);
+      }
+    } catch (_) {}
+  }
+  // 폴백: 차단 텍스트("Rate limit", "한도", "초과")가 보이는 dialog만 닫음 (정상 다이얼로그는 보호)
+  try {
+    const dialogs = await page.$$('[role="dialog"]');
+    for (const d of dialogs) {
+      if (!(await d.isVisible())) continue;
+      const text = (await d.textContent() || '').toLowerCase();
+      if (text.includes('rate limit') || text.includes('한도') || text.includes('초과') || text.includes('too many')) {
+        console.warn('[tab ' + tabIdx + '] blocking dialog by text match, dismissing...');
+        await page.keyboard.press('Escape').catch(() => {});
+        await page.waitForTimeout(500);
+      }
+    }
+  } catch (_) {}
+}
+
 async function submitPromptOnPage(page, item, tabIdx) {
   // item은 string 또는 { prompt, attachPath } 객체
   const prompt = typeof item === 'string' ? item : (item.prompt || '');
   const attachPath = (typeof item === 'object' && item) ? (item.attachPath || null) : null;
+
+  // 0) 모달 차단 처리 (rate-limit 등)
+  await dismissBlockingModals(page, tabIdx);
 
   // 1) 이미지 첨부 먼저 (있을 때만)
   if (attachPath) {
@@ -493,20 +605,36 @@ export async function generateImagesInProjectParallel({
     }
     await firstPage.waitForTimeout(2000);
 
-    // 1) 첫 페이지 프로젝트 진입
+    // 1) 첫 페이지 프로젝트 진입 (사이드바 펼침 효과)
     const projectUrl = await enterProject(firstPage, projectName);
     await firstPage.waitForTimeout(1500);
 
-    // 2) 나머지 N-1개 탭도 동일 흐름: chatgpt.com → 사이드바 "프로젝트(조)" 클릭
-    //    (URL이 안 바뀌니 navigate만으론 진입 불가, 각 탭에서 클릭 필요)
+    // 2) 사이드바에서 기존 대화 N개 URL 수집 (새 대화 만들지 않고 재활용 — rate-limit 회피)
+    const { urls: convUrls, labels: convLabels } = await findConversationUrls(firstPage, projectName, N);
+    if (convUrls.length < N) {
+      await dumpDiagnostic(firstPage, 'conv_insufficient');
+      throw new Error(
+        '프로젝트(조) 안에 미리 만들어둔 대화가 ' + convUrls.length + '개로, 필요한 ' + N + '개보다 부족합니다. ' +
+        'ChatGPT에서 사장님이 직접 "프로젝트(조)" 안에 빈 대화를 ' + (N - convUrls.length) + '개 더 만든 뒤 다시 시도해 주세요. ' +
+        '진단 자료: code/generated/_diag_conv_insufficient_*.png'
+      );
+    }
+
+    // 3) 각 탭이 conversation URL로 직접 진입 (새 대화 생성 X)
     const pages = [firstPage];
+    // 첫 페이지를 0번 대화로 이동
+    await firstPage.goto(convUrls[0], { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await firstPage.waitForTimeout(2000);
+    await dismissBlockingModals(firstPage, 0);
+    console.log('[parallel] Tab 0 entered existing conv: ' + convLabels[0]);
+
     for (let i = 1; i < N; i++) {
       const p = await ctx.newPage();
-      await p.goto(CHATGPT_CHAT_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await p.goto(convUrls[i], { waitUntil: 'domcontentloaded', timeout: 30000 });
       await p.waitForTimeout(2000);
-      await enterProject(p, projectName);
+      await dismissBlockingModals(p, i);
       pages.push(p);
-      console.log('[parallel] Tab ' + i + ' entered project');
+      console.log('[parallel] Tab ' + i + ' entered existing conv: ' + convLabels[i]);
     }
 
     // 3) stagger로 프롬프트 발사

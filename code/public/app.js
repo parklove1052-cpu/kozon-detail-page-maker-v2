@@ -941,14 +941,132 @@ function renderManualSlotCards(plan) {
     card.dataset.slug = req.slug;
     card.innerHTML = `
       <button class="slot-card__remove" type="button" title="제거">✕</button>
+      <button class="slot-card__regen" type="button" title="이 슬롯만 다시 만들기" hidden>↻ 다시 만들기</button>
       <div class="slot-card__title">${escapeHTML(req.role_ko || req.slug)}</div>
       <div class="slot-card__meta">slug · ${escapeHTML(req.slug)}<br>${escapeHTML(req.aspect || '')}</div>
       <div class="slot-card__preview">이미지 드롭</div>
+      <div class="slot-card__status" hidden></div>
     `;
     grid.appendChild(card);
     setupSlotDropzone(card, req.slug);
+    // 「↻ 다시 만들기」 — 단일 슬롯만 ChatGPT 재호출
+    const regenBtn = card.querySelector('.slot-card__regen');
+    if (regenBtn) {
+      regenBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        regenerateSingleSlot(req.slug);
+      });
+    }
   });
   updateSlotProgress();
+}
+
+// 진행 중 재생성 작업 추적 — 같은 슬러그 동시 두 번 클릭 방지
+const _regenInflight = new Set();
+
+// 단일 슬롯만 ChatGPT(조)로 재생성 — 기존 conversation 1개만 사용
+async function regenerateSingleSlot(slug) {
+  if (_regenInflight.has(slug)) {
+    toast('이 슬롯은 이미 재생성 중입니다', 'info');
+    return;
+  }
+  const reqs = state.plan?.image_requests || [];
+  const req = reqs.find(r => r.slug === slug);
+  if (!req) { toast('슬롯 정보를 찾을 수 없습니다: ' + slug, 'error'); return; }
+  const card = document.querySelector(`.slot-card[data-slug="${CSS.escape(slug)}"]`);
+  if (!card) return;
+  const statusEl = card.querySelector('.slot-card__status');
+  const regenBtn = card.querySelector('.slot-card__regen');
+  const setStatus = (msg, visible = true) => {
+    if (!statusEl) return;
+    statusEl.hidden = !visible;
+    statusEl.textContent = msg;
+  };
+  _regenInflight.add(slug);
+  if (regenBtn) regenBtn.disabled = true;
+
+  const prompt = String(req.prompt_en || '').trim();
+  if (!prompt) { toast('영문 프롬프트가 비어 있습니다', 'error'); if (regenBtn) regenBtn.disabled = false; return; }
+  const mode = String(req.prompt_mode || 'new_image');
+  const attachPath = (mode === 'product_based' || mode === 'reference_based') ? (req.attach_image_path || null) : null;
+  const item = attachPath ? { prompt, attachPath } : { prompt };
+
+  setStatus('⏳ 잡 시작 중…');
+  let jobId;
+  try {
+    const res = await api('/api/images/chatgpt/generate-parallel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectName: '프로젝트(조)',
+        prompts: [item],
+        staggerMs: 2500,
+        perTabTimeoutMs: 360000,
+      }),
+    });
+    const data = await safeJSON(res);
+    if (!res.ok || !data.ok || !data.jobId) throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+    jobId = data.jobId;
+    registerActiveJob(jobId);
+    setStatus(`⏳ 잡 ${jobId.slice(0,8)}… 진행 중`);
+  } catch (err) {
+    setStatus(`❌ 잡 시작 실패: ${err.message}`);
+    toast(`재생성 실패: ${err.message}`, 'error');
+    if (regenBtn) regenBtn.disabled = false;
+    _regenInflight.delete(slug);
+    return;
+  }
+
+  // 폴링
+  const deadline = Date.now() + 10 * 60 * 1000;
+  let job;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 3000));
+    try {
+      const r = await api(`/api/images/chatgpt/jobs/${jobId}`);
+      const d = await safeJSON(r);
+      job = d.job;
+      if (!job) throw new Error('job not found');
+      const elapsed = Math.round((Date.now() - job.createdAt) / 1000);
+      setStatus(`⏳ ${job.state} · ${elapsed}초…`);
+      if (job.state === 'done' || job.state === 'partial' || job.state === 'failed') break;
+    } catch (e) {
+      console.warn('[regen] poll error:', e.message);
+    }
+  }
+  unregisterActiveJob(jobId);
+
+  if (!job || job.state === 'failed' || !Array.isArray(job.urls) || !job.urls[0]) {
+    let msg;
+    if (!job) msg = '서버 응답 없음';
+    else if (job.state === 'running') msg = '10분 timeout — 잡은 서버에서 계속 진행됩니다';
+    else if (job.state === 'failed') msg = job.error || '실패';
+    else msg = '결과 이미지 없음';
+    setStatus(`❌ ${msg}`);
+    toast(`재생성 실패: ${msg}`, 'error');
+    if (regenBtn) regenBtn.disabled = false;
+    _regenInflight.delete(slug);
+    return;
+  }
+
+  // 결과 PNG → 슬롯 교체
+  try {
+    const resp = await fetch(job.urls[0]);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    const fname = `chatgpt_regen_${slug}.png`;
+    const file = new File([blob], fname, { type: blob.type || 'image/png' });
+    await assignSlot(card, slug, file);
+    setStatus('✅ 새 이미지 채움', false);
+    toast(`「${req.role_ko || slug}」 재생성 완료`, 'success');
+  } catch (e) {
+    setStatus(`❌ 슬롯 교체 실패: ${e.message}`);
+    toast(`슬롯 교체 실패: ${e.message}`, 'error');
+  } finally {
+    if (regenBtn) regenBtn.disabled = false;
+    _regenInflight.delete(slug);
+  }
 }
 
 // 하위호환 — 기존 호출 지점이 있을 수 있으므로 별칭 유지
@@ -1004,6 +1122,10 @@ function setupSlotDropzone(card, slug) {
     delete state.slotImages[slug];
     card.classList.remove('is-filled');
     card.querySelector('.slot-card__preview').innerHTML = '이미지 드롭';
+    const regenBtn = card.querySelector('.slot-card__regen');
+    if (regenBtn) regenBtn.hidden = true;
+    const statusEl = card.querySelector('.slot-card__status');
+    if (statusEl) { statusEl.hidden = true; statusEl.textContent = ''; }
     updateSlotProgress();
   });
 }
@@ -1018,6 +1140,9 @@ async function assignSlot(card, slug, file) {
     const preview = card.querySelector('.slot-card__preview');
     preview.innerHTML = `<img src="${dataUrl}" alt="${escapeHTML(file.name)}">`;
     card.classList.add('is-filled');
+    // 슬롯이 채워졌으므로 「↻ 다시 만들기」 버튼 노출
+    const regenBtn = card.querySelector('.slot-card__regen');
+    if (regenBtn) regenBtn.hidden = false;
     updateSlotProgress();
   } catch (err) {
     toast(`슬롯 매칭 실패: ${err.message}`, 'error');
