@@ -295,87 +295,71 @@ export async function generateImage({ prompt, count = 1 }) {
 
 async function enterProject(page, projectName) {
   console.log('[project] Searching sidebar for "' + projectName + '"...');
-  // 1차: 정확히 일치하는 truncate div의 클릭 가능한 부모 찾기
-  const beforeUrl = page.url();
 
-  // 후보 element 수집 — 정확 매치 우선, 부분 매치 폴백
-  // P1b: 사이드바 컨테이너 안에서만 검색하여 다중 매치 방지
-  let target = null;
-  const sidebarContainer = await page.$('nav, aside, [role="navigation"]').catch(() => null);
-  const exactDivs = sidebarContainer
-    ? await sidebarContainer.$$('div.truncate').catch(() => [])
-    : await page.$$('div.truncate');
-  for (const h of exactDivs) {
-    try {
-      const txt = (await h.textContent() || '').trim();
-      if (txt === projectName) {
-        if (await h.isVisible()) {
-          // 가장 가까운 클릭 가능 ancestor 찾기 (a > button > [role=button] > [data-testid])
-          const clickable = await h.evaluateHandle(el => {
-            let cur = el;
-            for (let i = 0; i < 8 && cur; i++) {
-              if (cur.tagName === 'A' || cur.tagName === 'BUTTON' ||
-                  cur.getAttribute('role') === 'button' ||
-                  cur.getAttribute('data-testid') ||
-                  cur.onclick) return cur;
-              cur = cur.parentElement;
-            }
-            return el;
-          });
-          target = clickable.asElement() || h;
-          break;
-        }
-      }
-    } catch (_) {}
-  }
-  if (!target) {
-    // 폴백: 광범위 매치
-    const all = await page.$$('div.truncate, a, button, li');
-    for (const h of all) {
+  // 1) ChatGPT 사이드바의 프로젝트 row 는 `role=button` + `aria-expanded` + `data-sidebar-item=true`
+  //    텍스트에 projectName 포함된 row 직접 찾기
+  async function findProjectRow() {
+    const rows = await page.$$('[role="button"][aria-expanded][data-sidebar-item="true"]');
+    for (const r of rows) {
       try {
-        const txt = (await h.textContent() || '').trim();
-        if (txt.includes(projectName) && await h.isVisible()) { target = h; break; }
+        const txt = (await r.textContent() || '').trim();
+        if (txt.includes(projectName) && await r.isVisible()) return r;
       } catch (_) {}
     }
+    return null;
   }
+
+  let target = await findProjectRow();
   if (!target) {
     await dumpDiagnostic(page, 'project_not_found');
-    throw new Error('Sidebar item not found: "' + projectName + '". Diagnostic dumped.');
+    throw new Error('Sidebar row not found: "' + projectName + '" (role=button + aria-expanded). Diagnostic dumped.');
   }
 
-  // 이미 펼쳐진 상태 감지 — 프로젝트(조) 하위 conversation aria-label 가진 anchor가 있어야 진짜 펼침
-  async function countProjectAnchors() {
-    const all = await page.$$('a[data-sidebar-item="true"]');
-    let n = 0;
-    for (const a of all) {
-      try {
-        const label = (await a.getAttribute('aria-label')) || '';
-        if (label.includes(projectName)) n++;
-      } catch (_) {}
-    }
-    return n;
+  // 2) 이미 펼쳐졌는지 aria-expanded 직접 확인
+  let expanded = (await target.getAttribute('aria-expanded')) === 'true';
+  if (expanded) {
+    console.log('[project] aria-expanded=true already — skip toggle');
+    return page.url();
   }
 
-  const beforeCount = await countProjectAnchors();
-  if (beforeCount > 0) {
-    console.log('[project] Sidebar already shows ' + beforeCount + ' "' + projectName + '" anchors — skip click');
-  } else {
-    await target.scrollIntoViewIfNeeded().catch(() => {});
-    await target.click();
-    await page.waitForTimeout(3500);
-    // 펼침 확인 — 안 펼쳐졌으면 한 번 더 클릭 (토글 처리)
-    let afterCount = await countProjectAnchors();
-    if (afterCount === 0) {
-      console.log('[project] First click did not expand — trying once more');
-      await target.click().catch(() => {});
-      await page.waitForTimeout(3500);
-      afterCount = await countProjectAnchors();
-    }
-    console.log('[project] After click: ' + afterCount + ' project anchors visible');
-  }
-  const url = page.url();
-  console.log('[project] Entered project (SPA, URL may stay): ' + url);
-  return url;
+  // 3) 펼침 시도 — 3가지 방법 순차
+  await target.scrollIntoViewIfNeeded().catch(() => {});
+
+  // 3-A) 일반 click
+  console.log('[project] Try (A): target.click()');
+  await target.click().catch(e => console.warn('  click err: ' + e.message));
+  await page.waitForTimeout(1500);
+  expanded = (await target.getAttribute('aria-expanded')) === 'true';
+  if (expanded) { console.log('[project] expanded via click'); return page.url(); }
+
+  // 3-B) 포커스 + Enter (role=button은 키보드 토글 가능)
+  console.log('[project] Try (B): focus + Enter');
+  await target.focus().catch(() => {});
+  await page.keyboard.press('Enter').catch(() => {});
+  await page.waitForTimeout(1500);
+  expanded = (await target.getAttribute('aria-expanded')) === 'true';
+  if (expanded) { console.log('[project] expanded via Enter'); return page.url(); }
+
+  // 3-C) JS dispatchEvent (React Aria 비동기 핸들러 강제 트리거)
+  console.log('[project] Try (C): dispatchEvent click');
+  await target.evaluate(el => {
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+  }).catch(() => {});
+  await page.waitForTimeout(1500);
+  expanded = (await target.getAttribute('aria-expanded')) === 'true';
+  if (expanded) { console.log('[project] expanded via dispatchEvent'); return page.url(); }
+
+  // 3-D) Space 키 — role=button 추가 폴백
+  console.log('[project] Try (D): focus + Space');
+  await target.focus().catch(() => {});
+  await page.keyboard.press('Space').catch(() => {});
+  await page.waitForTimeout(1500);
+  expanded = (await target.getAttribute('aria-expanded')) === 'true';
+  if (expanded) { console.log('[project] expanded via Space'); return page.url(); }
+
+  // 실패 — 진단 dump + 에러
+  await dumpDiagnostic(page, 'project_expand_failed');
+  throw new Error('"' + projectName + '" 사이드바 row 펼침 실패 (4가지 방법 모두 실패). 진단 자료: code/generated/_diag_project_expand_failed_*.png');
 }
 
 // ChatGPT 입력 영역의 hidden file input 후보 셀렉터
