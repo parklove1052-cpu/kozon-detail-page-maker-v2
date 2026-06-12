@@ -131,18 +131,14 @@ async function launchContext() {
       '--disable-blink-features=AutomationControlled',
       '--no-first-run',
       '--no-default-browser-check',
+      '--window-position=100,80',
+      '--window-size=1280,900',
     ],
     ignoreDefaultArgs: ['--enable-automation'],
     viewport: { width: 1280, height: 900 },
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   };
-  try {
-    const ctx = await chromium.launchPersistentContext(PROFILE_DIR, { ...opts, channel: 'chrome' });
-    console.log('[chatgpt-image] Using system Chrome.');
-    return ctx;
-  } catch (e) {
-    console.warn('[chatgpt-image] System Chrome unavailable (' + e.message + '). Falling back to bundled Chromium.');
-  }
+  console.log('[chatgpt-image] Launching bundled Chromium (isolated from your normal Chrome)...');
   return chromium.launchPersistentContext(PROFILE_DIR, opts);
 }
 
