@@ -595,6 +595,22 @@ async function dismissBlockingModals(page, tabIdx) {
   } catch (_) {}
 }
 
+// 페이지 안 현재 보이는 모든 estuary/oaiusercontent 이미지 URL 수집
+// 제출 직전 호출 → 응답 후 비교해서 "새로 등장한" 이미지만 잡기 위함
+async function captureExistingImageUrls(page) {
+  const urls = new Set();
+  for (const sel of IMG_SELECTORS) {
+    try {
+      const imgs = await page.$$(sel);
+      for (const im of imgs) {
+        const src = await im.getAttribute('src').catch(() => null);
+        if (src && src.startsWith('http')) urls.add(src);
+      }
+    } catch (_) {}
+  }
+  return urls;
+}
+
 async function submitPromptOnPage(page, item, tabIdx) {
   // item은 string 또는 { prompt, attachPath } 객체
   const prompt = typeof item === 'string' ? item : (item.prompt || '');
@@ -627,38 +643,85 @@ async function submitPromptOnPage(page, item, tabIdx) {
       el.dispatchEvent(new InputEvent('input', { bubbles: true }));
     }, prompt);
   }
+  // 제출 직전: 현재 페이지에 이미 보이는 estuary 이미지 URL 캡처
+  // (그 대화의 옛 응답 이미지 — 이걸 우리 새 응답 이미지로 잘못 잡지 않게)
+  const beforeUrls = await captureExistingImageUrls(page);
+  if (beforeUrls.size > 0) {
+    console.log('[parallel] Tab ' + tabIdx + ' captured ' + beforeUrls.size + ' pre-existing image(s)');
+  }
+
   await page.waitForTimeout(300);
   await inputEl.press('Enter');
   console.log('[parallel] Tab ' + tabIdx + ' prompt submitted' + (attachPath ? ' (with attached image)' : ''));
+  return beforeUrls;
 }
 
-async function waitAndDownloadOnPage(page, tabIdx, destPath, timeoutMs) {
+// 응답 생성 중인지 감지 — "Stop generating" 같은 정지 버튼이 보이면 아직 생성 중
+async function isStillGenerating(page) {
+  const generatingSels = [
+    'button[data-testid="stop-button"]',
+    'button[aria-label*="stop"]',
+    'button[aria-label*="정지"]',
+    'button[aria-label*="중지"]',
+  ];
+  for (const sel of generatingSels) {
+    try {
+      const b = await page.$(sel);
+      if (b && await b.isVisible()) return true;
+    } catch (_) {}
+  }
+  return false;
+}
+
+async function waitAndDownloadOnPage(page, tabIdx, destPath, timeoutMs, beforeUrls) {
+  const before = beforeUrls instanceof Set ? beforeUrls : new Set();
   const deadline = Date.now() + timeoutMs;
+  let lastSeenCount = before.size;
+
   while (Date.now() < deadline) {
+    // 1) 새로 등장한 estuary 이미지 src만 후보로 수집 (before set에 없는 것)
+    const newSrcs = [];
     for (const sel of IMG_SELECTORS) {
       try {
         const imgs = await page.$$(sel);
         for (const im of imgs) {
-          const src = await im.getAttribute('src');
-          if (src && src.startsWith('http')) {
-            // 다운로드 시도
-            try {
-              const r = await page.request.get(src);
-              if (r.ok()) {
-                writeFileSync(destPath, await r.body());
-                console.log('[parallel] Tab ' + tabIdx + ' saved: ' + destPath);
-                return { ok: true, src, dest: destPath };
-              }
-            } catch (_) {}
+          const src = await im.getAttribute('src').catch(() => null);
+          if (src && src.startsWith('http') && !before.has(src) && !newSrcs.includes(src)) {
+            newSrcs.push(src);
           }
         }
       } catch (_) {}
     }
+
+    // 2) 새 이미지가 보이고 + ChatGPT가 더 이상 생성 중이 아니면 다운로드
+    if (newSrcs.length > 0) {
+      const stillGen = await isStillGenerating(page);
+      if (!stillGen) {
+        // 가장 마지막에 추가된 이미지가 새 응답 본인 — 보통 newSrcs[newSrcs.length-1]
+        // 단 ChatGPT가 메인 이미지 + thumbnail 두 src 같이 만들 수 있어서 두 개 다 같은 file_id 이면 동일
+        // 우선 마지막 추가 src 우선 사용 (가장 최근 응답)
+        const candidate = newSrcs[newSrcs.length - 1];
+        try {
+          const r = await page.request.get(candidate);
+          if (r.ok()) {
+            writeFileSync(destPath, await r.body());
+            console.log('[parallel] Tab ' + tabIdx + ' saved NEW image: ' + destPath);
+            return { ok: true, src: candidate, dest: destPath };
+          }
+        } catch (e) {
+          console.warn('[parallel] Tab ' + tabIdx + ' download failed: ' + e.message);
+        }
+      } else if (newSrcs.length !== lastSeenCount) {
+        console.log('[parallel] Tab ' + tabIdx + ' has ' + newSrcs.length + ' new src(s) but still generating — wait...');
+        lastSeenCount = newSrcs.length;
+      }
+    }
+
     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
   }
   // 타임아웃 — 진단 dump
   await dumpDiagnostic(page, 'parallel_tab' + tabIdx);
-  throw new Error('Tab ' + tabIdx + ' timeout — diagnostic dumped');
+  throw new Error('Tab ' + tabIdx + ' timeout — no NEW image after generation. Diagnostic dumped.');
 }
 
 /**
@@ -738,18 +801,20 @@ export async function generateImagesInProjectParallel({
       console.log('[parallel] Tab ' + i + ' entered existing conv: ' + convLabels[i]);
     }
 
-    // 3) stagger로 프롬프트 발사
+    // 3) stagger로 프롬프트 발사 — 각 탭의 "제출 직전 기존 이미지 URL set" 수집
+    const beforeUrlsByTab = [];
     for (let i = 0; i < N; i++) {
-      await submitPromptOnPage(pages[i], prompts[i], i);
+      const before = await submitPromptOnPage(pages[i], prompts[i], i);
+      beforeUrlsByTab[i] = before;
       if (i < N - 1) await new Promise(r => setTimeout(r, staggerMs));
     }
-    console.log('[parallel] All ' + N + ' prompts submitted. Awaiting images...');
+    console.log('[parallel] All ' + N + ' prompts submitted. Awaiting NEW images...');
 
-    // 4) 동시 결과 대기 + 다운로드
+    // 4) 동시 결과 대기 + 다운로드 — 각 탭의 beforeUrls 전달해서 옛 이미지 무시
     const ts = Date.now();
     const results = await Promise.allSettled(pages.map((p, i) => {
       const dest = join(finalOutDir, String(i + 1).padStart(2, '0') + '_' + ts + '.png');
-      return waitAndDownloadOnPage(p, i, dest, perTabTimeoutMs);
+      return waitAndDownloadOnPage(p, i, dest, perTabTimeoutMs, beforeUrlsByTab[i]);
     }));
 
     const files = [];
