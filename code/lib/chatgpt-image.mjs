@@ -21,9 +21,9 @@ const GENERATED_DIR = join(CODE_ROOT, 'generated');
 const PROFILE_DIR   = join(DOMAIN_ROOT, 'chatgpt-profile');
 
 const LOGIN_TIMEOUT_MS      = 5 * 60 * 1000;
-const GENERATION_TIMEOUT_MS = 90 * 1000;
+const GENERATION_TIMEOUT_MS = 150 * 1000;
 const POLL_INTERVAL_MS      = 3000;
-const CHATGPT_CHAT_URL = 'https://chatgpt.com/?model=gpt-4o';
+const CHATGPT_CHAT_URL = 'https://chatgpt.com/';
 
 // Input box selector candidates (tried in order; first visible one wins)
 const INPUT_SELECTORS = [
@@ -35,23 +35,46 @@ const INPUT_SELECTORS = [
 ];
 
 // Image selector candidates in the ChatGPT assistant response area
+// 2026-06-12 확정: ChatGPT 최신 응답은 chatgpt.com/backend-api/estuary/content?... 도메인 사용
 const IMG_SELECTORS = [
-  'div[data-message-author-role="assistant"] img[src*="oaiusercontent.com"]',
+  'img[src*="chatgpt.com/backend-api/estuary"]',
+  'img[alt^="생성된 이미지"]',
+  'img[alt^="Generated image"]',
+  'img[src*="chatgpt.com/backend-api"]',
   'img[src*="oaiusercontent.com"]',
   'img[src*="files.oaiusercontent"]',
+  'img[src*="cdn.openai"]',
   'div[data-message-author-role="assistant"] img[src^="https"]',
   '.markdown img[src^="https"]',
 ];
 
 async function isLoggedIn(page) {
   const url = page.url();
+  // 명백한 로그인/인증 페이지면 false
   if (url.includes('/auth/login') || url.includes('/auth/') ||
-      url.includes('login.openai') || url.includes('accounts.openai')) return false;
+      url.includes('login.openai') || url.includes('accounts.openai') ||
+      url.includes('auth0.openai')) return false;
+  // chatgpt.com 메인 URL이면 일단 로그인 상태 후보
+  if (!url.startsWith('https://chatgpt.com/') && !url.startsWith('https://chat.openai.com/')) {
+    return false;
+  }
+  // 로그인 버튼이 화면에 보이면 미로그인
   try {
-    const sel = '[data-testid="new-chat-button"], [aria-label="New chat"], nav[aria-label]';
-    const els = await page.$$(sel);
-    return els.length > 0;
-  } catch (_) { return false; }
+    const loginBtnSels = [
+      'button[data-testid="login-button"]',
+      'a[href*="/auth/login"]',
+      'button:has-text("Log in")',
+      'button:has-text("로그인")',
+    ];
+    for (const sel of loginBtnSels) {
+      try {
+        const el = await page.$(sel);
+        if (el && await el.isVisible()) return false;
+      } catch (_) {}
+    }
+  } catch (_) {}
+  // URL이 chatgpt.com 메인이고 로그인 버튼 안 보이면 로그인된 것으로 간주
+  return true;
 }
 
 async function waitForLogin(page) {
@@ -75,11 +98,38 @@ async function findInputBox(page) {
       if (el && await el.isVisible()) return el;
     } catch (_) {}
   }
+  // P2a: 모든 셀렉터 실패 시 진단 정보 덤프
+  console.warn('[findInputBox] All selectors failed. Diagnostic dump:');
+  for (const sel of INPUT_SELECTORS) {
+    try {
+      const el = await page.$(sel);
+      const visible = el ? await el.isVisible().catch(() => 'error') : 'not found';
+      console.warn(`  selector=${sel} -> ${visible}`);
+    } catch (e) {
+      console.warn(`  selector=${sel} -> exception: ${e.message}`);
+    }
+  }
   return null;
 }
 
+async function dumpDiagnostic(page, tag) {
+  try {
+    if (!existsSync(GENERATED_DIR)) mkdirSync(GENERATED_DIR, { recursive: true });
+    const ts = Date.now();
+    const shot = join(GENERATED_DIR, '_diag_' + tag + '_' + ts + '.png');
+    const html = join(GENERATED_DIR, '_diag_' + tag + '_' + ts + '.html');
+    await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
+    const content = await page.content().catch(() => '');
+    writeFileSync(html, content);
+    console.log('[chatgpt-image] Diagnostic saved: ' + shot);
+    console.log('[chatgpt-image] Diagnostic saved: ' + html);
+  } catch (e) {
+    console.warn('[chatgpt-image] Diagnostic dump failed: ' + e.message);
+  }
+}
+
 async function waitForImages(page, count) {
-  console.log('[chatgpt-image] Waiting for image generation (max 90s)...');
+  console.log('[chatgpt-image] Waiting for image generation (max ' + Math.round(GENERATION_TIMEOUT_MS/1000) + 's)...');
   const deadline = Date.now() + GENERATION_TIMEOUT_MS;
   while (Date.now() < deadline) {
     for (const sel of IMG_SELECTORS) {
@@ -97,7 +147,8 @@ async function waitForImages(page, count) {
     }
     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
   }
-  throw new Error('Generation timeout: no image appeared in 90s. Update IMG_SELECTORS in chatgpt-image.mjs if ChatGPT changed its DOM.');
+  await dumpDiagnostic(page, 'timeout');
+  throw new Error('Generation timeout: no image appeared in ' + Math.round(GENERATION_TIMEOUT_MS/1000) + 's. Diagnostic screenshot+HTML saved to code/generated/_diag_*. Update IMG_SELECTORS based on what you see.');
 }
 
 function downloadUrl(url, dest) {
@@ -198,22 +249,31 @@ export async function generateImage({ prompt, count = 1 }) {
     const ts   = Date.now();
     const files = [];
 
+    // estuary URL은 인증 쿠키 필요 → page.request 우선 (쿠키 자동 포함)
+    const seen = new Set();
     for (let i = 0; i < srcs.length; i++) {
-      const dest = join(GENERATED_DIR, ts + '_' + (i + 1) + '.png');
-      console.log('[chatgpt-image] Downloading image ' + (i + 1) + '/' + srcs.length + '...');
+      const src = srcs[i];
+      if (seen.has(src)) continue;  // 같은 이미지 중복 src 제거
+      seen.add(src);
+      const dest = join(GENERATED_DIR, ts + '_' + (files.length + 1) + '.png');
+      console.log('[chatgpt-image] Downloading image ' + (files.length + 1) + '/' + count + '...');
       try {
-        await downloadUrl(srcs[i], dest);
-        files.push(dest);
-        console.log('[chatgpt-image] Saved: ' + dest);
+        const r = await page.request.get(src);
+        if (r.ok()) {
+          writeFileSync(dest, await r.body());
+          files.push(dest);
+          console.log('[chatgpt-image] Saved (page.request): ' + dest);
+          if (files.length >= count) break;
+        } else {
+          throw new Error('HTTP ' + r.status());
+        }
       } catch (e1) {
-        console.warn('[chatgpt-image] Direct download failed: ' + e1.message + '. Trying page.request...');
+        console.warn('[chatgpt-image] page.request failed: ' + e1.message + '. Trying direct https...');
         try {
-          const r = await page.request.get(srcs[i]);
-          if (r.ok()) {
-            writeFileSync(dest, await r.body());
-            files.push(dest);
-            console.log('[chatgpt-image] Saved via page.request: ' + dest);
-          }
+          await downloadUrl(src, dest);
+          files.push(dest);
+          console.log('[chatgpt-image] Saved (https direct): ' + dest);
+          if (files.length >= count) break;
         } catch (e2) {
           console.error('[chatgpt-image] Both download methods failed: ' + e2.message);
         }
@@ -225,6 +285,263 @@ export async function generateImage({ prompt, count = 1 }) {
     console.log('[chatgpt-image] Done. ' + files.length + ' image(s) in ' + elapsed_ms + 'ms');
     return { ok: true, files, elapsed_ms };
 
+  } finally {
+    if (ctx) { try { await ctx.close(); } catch (_) {} }
+  }
+}
+
+// ======================== Project Parallel Mode ========================
+// 사장님의 "프로젝트(조)" 안에서만 N개 탭 병렬 생성 + 지정 폴더 이동
+
+async function enterProject(page, projectName) {
+  console.log('[project] Searching sidebar for "' + projectName + '"...');
+  // 1차: 정확히 일치하는 truncate div의 클릭 가능한 부모 찾기
+  const beforeUrl = page.url();
+
+  // 후보 element 수집 — 정확 매치 우선, 부분 매치 폴백
+  // P1b: 사이드바 컨테이너 안에서만 검색하여 다중 매치 방지
+  let target = null;
+  const sidebarContainer = await page.$('nav, aside, [role="navigation"]').catch(() => null);
+  const exactDivs = sidebarContainer
+    ? await sidebarContainer.$$('div.truncate').catch(() => [])
+    : await page.$$('div.truncate');
+  for (const h of exactDivs) {
+    try {
+      const txt = (await h.textContent() || '').trim();
+      if (txt === projectName) {
+        if (await h.isVisible()) {
+          // 가장 가까운 클릭 가능 ancestor 찾기 (a > button > [role=button] > [data-testid])
+          const clickable = await h.evaluateHandle(el => {
+            let cur = el;
+            for (let i = 0; i < 8 && cur; i++) {
+              if (cur.tagName === 'A' || cur.tagName === 'BUTTON' ||
+                  cur.getAttribute('role') === 'button' ||
+                  cur.getAttribute('data-testid') ||
+                  cur.onclick) return cur;
+              cur = cur.parentElement;
+            }
+            return el;
+          });
+          target = clickable.asElement() || h;
+          break;
+        }
+      }
+    } catch (_) {}
+  }
+  if (!target) {
+    // 폴백: 광범위 매치
+    const all = await page.$$('div.truncate, a, button, li');
+    for (const h of all) {
+      try {
+        const txt = (await h.textContent() || '').trim();
+        if (txt.includes(projectName) && await h.isVisible()) { target = h; break; }
+      } catch (_) {}
+    }
+  }
+  if (!target) {
+    await dumpDiagnostic(page, 'project_not_found');
+    throw new Error('Sidebar item not found: "' + projectName + '". Diagnostic dumped.');
+  }
+
+  await target.scrollIntoViewIfNeeded().catch(() => {});
+  await target.click();
+  // ChatGPT는 프로젝트 진입을 SPA 라우팅으로 처리해 URL이 안 바뀜 — 클릭 후 충분히 대기하면 진입 완료
+  await page.waitForTimeout(3500);
+  const url = page.url();
+  console.log('[project] Entered project (SPA, URL may stay): ' + url);
+  return url;
+}
+
+// ChatGPT 입력 영역의 hidden file input 후보 셀렉터
+const FILE_INPUT_SELECTORS = [
+  'input[type="file"][accept*="image"]',
+  'input[type="file"][multiple]',
+  'input[type="file"]',
+];
+
+async function attachImageToInput(page, attachPath, tabIdx) {
+  if (!attachPath) return false;
+  if (!existsSync(attachPath)) {
+    console.warn('[tab ' + tabIdx + '] attach path missing: ' + attachPath);
+    return false;
+  }
+  for (const sel of FILE_INPUT_SELECTORS) {
+    try {
+      const el = await page.$(sel);
+      if (el) {
+        await el.setInputFiles(attachPath);
+        console.log('[tab ' + tabIdx + '] attached image via ' + sel + ' = ' + attachPath);
+        // 첨부 후 ChatGPT가 미리보기 만들 시간
+        await page.waitForTimeout(3000);
+        return true;
+      }
+    } catch (e) {
+      console.warn('[tab ' + tabIdx + '] attach try failed (' + sel + '): ' + e.message);
+    }
+  }
+  // 진단 — 어떤 파일 input도 못 찾음
+  console.warn('[tab ' + tabIdx + '] no file input found, sending text-only');
+  await dumpDiagnostic(page, 'no_file_input_tab' + tabIdx);
+  return false;
+}
+
+async function submitPromptOnPage(page, item, tabIdx) {
+  // item은 string 또는 { prompt, attachPath } 객체
+  const prompt = typeof item === 'string' ? item : (item.prompt || '');
+  const attachPath = (typeof item === 'object' && item) ? (item.attachPath || null) : null;
+
+  // 1) 이미지 첨부 먼저 (있을 때만)
+  if (attachPath) {
+    await attachImageToInput(page, attachPath, tabIdx);
+  }
+
+  // 2) 입력박스 찾기 + 텍스트 입력 + Enter
+  let inputEl = null;
+  for (let a = 0; a < 5; a++) {
+    inputEl = await findInputBox(page);
+    if (inputEl) break;
+    await page.waitForTimeout(1500);
+  }
+  if (!inputEl) throw new Error('Tab ' + tabIdx + ': input box not found');
+  await inputEl.click();
+  await page.waitForTimeout(200);
+  const tag = await inputEl.evaluate(el => el.tagName.toLowerCase());
+  if (tag === 'textarea') {
+    await inputEl.fill(prompt);
+  } else {
+    await inputEl.evaluate((el, t) => {
+      el.innerHTML = ''; el.textContent = t;
+      el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    }, prompt);
+  }
+  await page.waitForTimeout(300);
+  await inputEl.press('Enter');
+  console.log('[parallel] Tab ' + tabIdx + ' prompt submitted' + (attachPath ? ' (with attached image)' : ''));
+}
+
+async function waitAndDownloadOnPage(page, tabIdx, destPath, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    for (const sel of IMG_SELECTORS) {
+      try {
+        const imgs = await page.$$(sel);
+        for (const im of imgs) {
+          const src = await im.getAttribute('src');
+          if (src && src.startsWith('http')) {
+            // 다운로드 시도
+            try {
+              const r = await page.request.get(src);
+              if (r.ok()) {
+                writeFileSync(destPath, await r.body());
+                console.log('[parallel] Tab ' + tabIdx + ' saved: ' + destPath);
+                return { ok: true, src, dest: destPath };
+              }
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+  }
+  // 타임아웃 — 진단 dump
+  await dumpDiagnostic(page, 'parallel_tab' + tabIdx);
+  throw new Error('Tab ' + tabIdx + ' timeout — diagnostic dumped');
+}
+
+/**
+ * Generate N images in parallel inside a ChatGPT Project.
+ * @param {{
+ *   projectName: string,         // 사이드바에 보이는 텍스트 (예: "프로젝트(조)")
+ *   prompts: Array<string | { prompt: string, attachPath?: string }>,  // N개 — 각 슬롯에 첨부 이미지 경로 지정 가능
+ *   outputDir?: string,          // 결과 PNG 저장 폴더 (없으면 code/generated/parallel_<ts>/)
+ *   staggerMs?: number,          // 탭간 발사 간격 (기본 2500)
+ *   perTabTimeoutMs?: number,    // 각 탭 이미지 대기 (기본 180초)
+ * }} opts
+ * @returns {Promise<{ ok: boolean, files: string[], outputDir: string, projectUrl: string, elapsed_ms: number, failures: any[] }>}
+ */
+export async function generateImagesInProjectParallel({
+  projectName,
+  prompts,
+  outputDir,
+  staggerMs = 2500,
+  perTabTimeoutMs = 180000,
+}) {
+  if (!projectName) throw new Error('projectName is required');
+  if (!Array.isArray(prompts) || prompts.length === 0) throw new Error('prompts must be a non-empty array');
+  // 정규화 — string 또는 객체 모두 { prompt, attachPath } 형태로
+  prompts = prompts.map((p, i) => {
+    if (typeof p === 'string') return { prompt: p, attachPath: null };
+    if (p && typeof p === 'object') return { prompt: String(p.prompt || ''), attachPath: p.attachPath || null };
+    throw new Error('prompt #' + i + ' invalid');
+  });
+
+  const startMs = Date.now();
+  const N = prompts.length;
+  if (!existsSync(GENERATED_DIR)) mkdirSync(GENERATED_DIR, { recursive: true });
+  if (!existsSync(PROFILE_DIR))   mkdirSync(PROFILE_DIR,   { recursive: true });
+  const finalOutDir = outputDir || join(GENERATED_DIR, 'parallel_' + Date.now());
+  if (!existsSync(finalOutDir)) mkdirSync(finalOutDir, { recursive: true });
+
+  let ctx;
+  try {
+    ctx = await launchContext();
+    const firstPage = ctx.pages().length > 0 ? ctx.pages()[0] : await ctx.newPage();
+    await firstPage.goto(CHATGPT_CHAT_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    if (!(await isLoggedIn(firstPage))) {
+      await waitForLogin(firstPage);
+      await firstPage.goto(CHATGPT_CHAT_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    }
+    await firstPage.waitForTimeout(2000);
+
+    // 1) 첫 페이지 프로젝트 진입
+    const projectUrl = await enterProject(firstPage, projectName);
+    await firstPage.waitForTimeout(1500);
+
+    // 2) 나머지 N-1개 탭도 동일 흐름: chatgpt.com → 사이드바 "프로젝트(조)" 클릭
+    //    (URL이 안 바뀌니 navigate만으론 진입 불가, 각 탭에서 클릭 필요)
+    const pages = [firstPage];
+    for (let i = 1; i < N; i++) {
+      const p = await ctx.newPage();
+      await p.goto(CHATGPT_CHAT_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await p.waitForTimeout(2000);
+      await enterProject(p, projectName);
+      pages.push(p);
+      console.log('[parallel] Tab ' + i + ' entered project');
+    }
+
+    // 3) stagger로 프롬프트 발사
+    for (let i = 0; i < N; i++) {
+      await submitPromptOnPage(pages[i], prompts[i], i);
+      if (i < N - 1) await new Promise(r => setTimeout(r, staggerMs));
+    }
+    console.log('[parallel] All ' + N + ' prompts submitted. Awaiting images...');
+
+    // 4) 동시 결과 대기 + 다운로드
+    const ts = Date.now();
+    const results = await Promise.allSettled(pages.map((p, i) => {
+      const dest = join(finalOutDir, String(i + 1).padStart(2, '0') + '_' + ts + '.png');
+      return waitAndDownloadOnPage(p, i, dest, perTabTimeoutMs);
+    }));
+
+    const files = [];
+    const failures = [];
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled' && r.value && r.value.ok) files.push(r.value.dest);
+      else failures.push({ tab: i, reason: r.reason?.message || String(r.reason) });
+    });
+
+    const elapsed_ms = Date.now() - startMs;
+    console.log('[parallel] Done. ' + files.length + '/' + N + ' images in ' + elapsed_ms + 'ms');
+    if (failures.length) console.warn('[parallel] Failures: ' + JSON.stringify(failures));
+
+    return {
+      ok: files.length === N,
+      files,
+      outputDir: finalOutDir,
+      projectUrl,
+      elapsed_ms,
+      failures,
+    };
   } finally {
     if (ctx) { try { await ctx.close(); } catch (_) {} }
   }

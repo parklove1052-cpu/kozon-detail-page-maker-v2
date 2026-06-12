@@ -22,7 +22,31 @@ async function getChatgptImageModule() {
 // In-memory job store for ChatGPT image jobs
 const CHATGPT_JOBS = new Map();
 
+// P1a: TTL 24h + 상한 50개 — 메모리 누수 방지
+function pruneChatgptJobs() {
+  const TTL_MS = 24 * 60 * 60 * 1000; // 24시간
+  const now = Date.now();
+  // 1) 만료된 항목 제거 (done/failed/pending 중 24h 초과)
+  for (const [id, job] of CHATGPT_JOBS) {
+    if (job.state !== 'running' && (now - (job.createdAt || 0)) > TTL_MS) {
+      CHATGPT_JOBS.delete(id);
+    }
+  }
+  // 2) 50개 초과 시 가장 오래된 done/failed 잡부터 evict
+  if (CHATGPT_JOBS.size > 50) {
+    const evictable = [...CHATGPT_JOBS.entries()]
+      .filter(([, j]) => j.state === 'done' || j.state === 'failed')
+      .sort(([, a], [, b]) => (a.createdAt || 0) - (b.createdAt || 0));
+    const excess = CHATGPT_JOBS.size - 50;
+    for (let i = 0; i < excess && i < evictable.length; i++) {
+      CHATGPT_JOBS.delete(evictable[i][0]);
+    }
+  }
+}
+
+
 function createChatgptJob(prompt, count) {
+  pruneChatgptJobs(); // P1a: TTL+크기 정리
   const job = {
     id: require('crypto').randomBytes(16).toString('hex'),
     state: 'pending',
@@ -51,6 +75,53 @@ function runChatgptJob(job) {
       job.state = 'failed';
       job.error = err.message || String(err);
       console.error('[chatgpt-job ' + job.id.slice(0,8) + '] failed: ' + job.error);
+    });
+}
+
+function createChatgptParallelJob(projectName, prompts, opts = {}) {
+  pruneChatgptJobs(); // P1a: TTL+크기 정리
+  const job = {
+    id: require('crypto').randomBytes(16).toString('hex'),
+    state: 'pending',
+    mode: 'parallel',
+    projectName,
+    prompts,
+    staggerMs: opts.staggerMs || 5000,
+    perTabTimeoutMs: opts.perTabTimeoutMs || 360000,
+    createdAt: Date.now(),
+    files: null,
+    failures: null,
+    error: null,
+    elapsed_ms: null,
+    outputDir: null,
+    projectUrl: null,
+  };
+  CHATGPT_JOBS.set(job.id, job);
+  return job;
+}
+
+function runChatgptParallelJob(job) {
+  job.state = 'running';
+  getChatgptImageModule()
+    .then(mod => mod.generateImagesInProjectParallel({
+      projectName: job.projectName,
+      prompts: job.prompts,
+      staggerMs: job.staggerMs,
+      perTabTimeoutMs: job.perTabTimeoutMs,
+    }))
+    .then(result => {
+      job.state = result.ok ? 'done' : 'partial';
+      job.files = result.files;
+      job.failures = result.failures;
+      job.outputDir = result.outputDir;
+      job.projectUrl = result.projectUrl;
+      job.elapsed_ms = result.elapsed_ms;
+      console.log('[chatgpt-parallel ' + job.id.slice(0,8) + '] ' + job.state + ' ' + result.files.length + '/' + job.prompts.length);
+    })
+    .catch(err => {
+      job.state = 'failed';
+      job.error = err.message || String(err);
+      console.error('[chatgpt-parallel ' + job.id.slice(0,8) + '] failed: ' + job.error);
     });
 }
 
@@ -1543,6 +1614,48 @@ function serveUpload(req, res, pathname) {
   });
 }
 
+// /generated/<sub>/<file.png> — ChatGPT 자동 생성 결과 PNG/JPG/WEBP만 (이미지 allowlist)
+const GENERATED_DIR_SRV = path.join(ROOT, 'generated');
+const GENERATED_IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+function serveGenerated(req, res, pathname) {
+  const rel = pathname.replace(/^\/generated\//, '');
+  const fullPath = path.normalize(path.join(GENERATED_DIR_SRV, rel));
+  if (!isInside(GENERATED_DIR_SRV, fullPath)) {
+    sendError(res, 403, '잘못된 경로');
+    return;
+  }
+  // P0: symlink/junction escape 방어 — realpathSync.native()로 실제 경로 재확인
+  let realFilePath;
+  try {
+    realFilePath = fs.realpathSync.native(fullPath);
+  } catch (e) {
+    sendError(res, 404, '생성 파일 없음', fullPath);
+    return;
+  }
+  if (!isInside(GENERATED_DIR_SRV, realFilePath)) {
+    sendError(res, 403, '경로 탈출 시도 차단');
+    return;
+  }
+  const ext = path.extname(fullPath).toLowerCase();
+  if (!GENERATED_IMAGE_EXT.has(ext)) {
+    sendError(res, 403, '허용되지 않는 확장자', ext);
+    return;
+  }
+  fs.stat(fullPath, (err, stat) => {
+    if (err || !stat.isFile()) {
+      sendError(res, 404, '생성 파일 없음', pathname);
+      return;
+    }
+    const mime = MIME[ext] || 'application/octet-stream';
+    res.writeHead(200, {
+      'Content-Type': mime,
+      'Content-Length': stat.size,
+      'Cache-Control': 'private, max-age=300',
+    });
+    fs.createReadStream(fullPath).pipe(res);
+  });
+}
+
 // 결과 폴더에서 서빙 허용되는 확장자 (allowlist)
 // .html/.txt 는 LLM 산출물 (CSP 강제) — .png/.jpg/.jpeg/.webp 는 이미지 산출물 (CSP 미적용)
 const OUTPUT_ALLOWED_EXT = new Set(['.html', '.txt', '.png', '.jpg', '.jpeg', '.webp']);
@@ -1730,17 +1843,74 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
+    if (method === 'POST' && pathname === '/api/images/chatgpt/generate-parallel') {
+      let body = '';
+      req.on('data', c => { body += c; if (body.length > 200 * 1024) req.destroy(); });
+      req.on('end', () => {
+        let parsed = {};
+        try { parsed = JSON.parse(body); } catch (_) {}
+        const projectName = (parsed.projectName || '프로젝트(조)').trim();
+
+        // prompts: string[] 또는 { prompt, attachPath }[] 둘 다 수용
+        // attachPath는 UPLOADS_DIR 또는 GENERATED_DIR_SRV 안의 경로만 허용 (path traversal 차단)
+        const raw = Array.isArray(parsed.prompts) ? parsed.prompts : [];
+        const prompts = [];
+        for (const item of raw) {
+          if (typeof item === 'string') {
+            const t = item.trim();
+            if (t) prompts.push({ prompt: t, attachPath: null });
+          } else if (item && typeof item === 'object') {
+            const t = String(item.prompt || '').trim();
+            if (!t) continue;
+            let attachPath = null;
+            if (item.attachPath && typeof item.attachPath === 'string') {
+              const candidate = path.normalize(item.attachPath);
+              const inUploads = isInside(UPLOADS_DIR, candidate);
+              const inGenerated = isInside(GENERATED_DIR_SRV, candidate);
+              if ((inUploads || inGenerated) && fs.existsSync(candidate)) {
+                attachPath = candidate;
+              } else {
+                console.warn('[generate-parallel] attachPath rejected (outside allowed dirs or missing):', item.attachPath);
+              }
+            }
+            prompts.push({ prompt: t, attachPath });
+          }
+        }
+        if (prompts.length === 0) return sendError(res, 400, 'prompts (non-empty array) is required');
+        if (prompts.length > 12) return sendError(res, 400, 'too many prompts (max 12)', prompts.length);
+        const staggerMs = Math.max(1500, Math.min(15000, parseInt(parsed.staggerMs, 10) || 5000));
+        const perTabTimeoutMs = Math.max(60000, Math.min(600000, parseInt(parsed.perTabTimeoutMs, 10) || 360000));
+        const job = createChatgptParallelJob(projectName, prompts, { staggerMs, perTabTimeoutMs });
+        runChatgptParallelJob(job);
+        const attachedCount = prompts.filter(p => p.attachPath).length;
+        sendJSON(res, 202, { ok: true, jobId: job.id, count: prompts.length, attachedCount });
+      });
+      return;
+    }
     if (method === 'GET' && pathname.startsWith('/api/images/chatgpt/jobs/')) {
       const jobId = pathname.replace('/api/images/chatgpt/jobs/', '').split('/')[0];
       const job = CHATGPT_JOBS.get(jobId);
       if (!job) return sendError(res, 404, 'job not found', jobId);
+      // 파일 절대경로를 /generated/<sub>/<file> 상대 URL로 변환 (클라이언트 fetch용)
+      const toUrl = (abs) => {
+        if (!abs) return null;
+        const norm = path.normalize(abs);
+        if (!isInside(GENERATED_DIR_SRV, norm)) return null;
+        const rel = path.relative(GENERATED_DIR_SRV, norm).split(path.sep).join('/');
+        return '/generated/' + rel;
+      };
       return sendJSON(res, 200, {
         ok: true,
         job: {
           id: job.id,
           state: job.state,
+          mode: job.mode || 'single',
           createdAt: job.createdAt,
           files: job.files,
+          urls: Array.isArray(job.files) ? job.files.map(toUrl) : null,
+          failures: job.failures || null,
+          outputDir: job.outputDir || null,
+          projectUrl: job.projectUrl || null,
           elapsed_ms: job.elapsed_ms,
           error: job.error,
         },
@@ -1753,6 +1923,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (method === 'GET' && pathname.startsWith('/output/')) {
       return serveOutput(req, res, pathname);
+    }
+    if (method === 'GET' && pathname.startsWith('/generated/')) {
+      return serveGenerated(req, res, pathname);
     }
     if (method === 'GET') {
       return serveStatic(req, res, pathname);

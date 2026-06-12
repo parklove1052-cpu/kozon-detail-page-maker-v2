@@ -628,9 +628,19 @@ async function callPlan() {
     document.querySelector('#step-2')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     const slotCount = (data.plan?.image_requests || []).length;
     if (slotCount) {
-      toast(`기획 완성 — ${slotCount}개 이미지 프롬프트. ChatGPT에서 만들어 Step 3 슬롯에 채워주세요.`, 'success', 4000);
+      toast(`기획 완성 — ${slotCount}개 이미지 프롬프트. ChatGPT(조)로 자동 생성 시작…`, 'success', 4000);
     } else {
       toast('기획 완성 — 이번 기획은 새 이미지 생성이 필요 없습니다.', 'success', 3500);
+    }
+    // hint 약속: "이미지가 아직 없으면 — 영문 프롬프트를 받아 ChatGPT로 이미지 만든 뒤 Step 3에 채워 진행"
+    // ① 기획 완료 직후 슬롯이 비어 있으면 자동으로 ChatGPT(조) 호출 → 슬롯 자동 채움
+    // autoChain은 끄고(②는 사장님이 결과 확인 후 직접 클릭) 슬롯 채우기까지만 자동
+    const filledCount = Object.keys(state.slotImages || {}).length;
+    if (slotCount > 0 && filledCount === 0) {
+      // setLoading(false) 이후 비동기로 시작 — UI 잠금 풀고 다음 단계
+      setTimeout(() => {
+        autoGenerateViaChatGPT({ autoChain: false }).catch(e => console.error('[plan→auto] failed:', e));
+      }, 400);
     }
   } catch (err) {
     toast(`기획 실패: ${err.message}`, 'error', 6000);
@@ -786,6 +796,131 @@ async function openChatGPTNewTab() {
     toast('클립보드 복사 실패 — ChatGPT 새 탭만 엽니다. 직접 「모든 영문 프롬프트 복사」 버튼을 눌러주세요', 'info', 5000);
   }
   window.open('https://chatgpt.com/', '_blank', 'noopener');
+}
+
+// ─────────────── ⚡ ChatGPT(조)로 자동 생성 ───────────────
+// Step 2 후 prompt cards → 서버 generate-parallel 잡 발사 → 폴링 → 결과 URL 받아 슬롯 자동 채움
+async function autoGenerateViaChatGPT({ autoChain = false } = {}) {
+  const reqs = state.plan?.image_requests || [];
+  if (!reqs.length) {
+    toast('먼저 ① 기획 + 이미지 프롬프트 생성을 진행해 주세요', 'error');
+    return;
+  }
+  // 각 슬롯 → { prompt, attachPath }. attachPath 는 plan 응답의 attach_image_path 그대로.
+  //   - product_based / reference_based: 사장님이 올린 사진을 첨부
+  //   - new_image: 첨부 X (attachPath 생략)
+  const prompts = reqs
+    .map(r => {
+      const prompt = String(r.prompt_en || '').trim();
+      if (!prompt) return null;
+      const mode = String(r.prompt_mode || 'new_image');
+      const attachPath = (mode === 'product_based' || mode === 'reference_based')
+        ? (r.attach_image_path || null)
+        : null;
+      return attachPath ? { prompt, attachPath } : { prompt };
+    })
+    .filter(Boolean);
+  if (prompts.length === 0) {
+    toast('영문 프롬프트가 비어 있습니다', 'error');
+    return;
+  }
+  const attachedCount = prompts.filter(p => p.attachPath).length;
+
+  const statusEl = $('#auto-chatgpt-status');
+  const setStatus = (msg) => {
+    if (!statusEl) return;
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+  };
+  setStatus(`⏳ ChatGPT(조)로 ${prompts.length}장 자동 생성 요청 중… (사장님 사진 첨부 ${attachedCount}/${prompts.length})`);
+
+  let jobId;
+  try {
+    const res = await api('/api/images/chatgpt/generate-parallel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectName: '프로젝트(조)',
+        prompts,
+        staggerMs: 5000,
+        perTabTimeoutMs: 360000,
+      }),
+    });
+    const data = await safeJSON(res);
+    if (!res.ok || !data.ok || !data.jobId) {
+      throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+    }
+    jobId = data.jobId;
+    registerActiveJob(jobId);
+    setStatus(`⏳ 작업 ID ${jobId.slice(0,8)}… — 잡 시작됨 (4탭 stagger 5초, 페이지당 최대 6분)`);
+  } catch (err) {
+    setStatus(`❌ 잡 시작 실패: ${err.message}`);
+    toast(`자동 생성 잡 시작 실패: ${err.message}`, 'error');
+    return;
+  }
+
+  // 폴링 — 최대 10분 (600초 / 3초 간격)
+  const deadline = Date.now() + 10 * 60 * 1000;
+  let job;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 3000));
+    try {
+      const r = await api(`/api/images/chatgpt/jobs/${jobId}`);
+      const d = await safeJSON(r);
+      job = d.job;
+      if (!job) throw new Error('job not found');
+      const elapsed = Math.round((Date.now() - job.createdAt) / 1000);
+      setStatus(`⏳ ${job.state} · ${elapsed}초 경과…`);
+      if (job.state === 'done' || job.state === 'partial' || job.state === 'failed') break;
+    } catch (e) {
+      console.warn('[auto-chatgpt] poll error:', e.message);
+    }
+  }
+  unregisterActiveJob(jobId);
+
+  if (!job || job.state === 'failed') {
+    setStatus(`❌ 실패: ${job?.error || '응답 없음 (timeout)'}`);
+    toast(`자동 생성 실패: ${job?.error || 'timeout'}`, 'error');
+    return;
+  }
+
+  const urls = Array.isArray(job.urls) ? job.urls.filter(Boolean) : [];
+  setStatus(`✅ ${urls.length}/${prompts.length}장 수신 — 슬롯에 채우는 중…`);
+
+  // 결과 PNG를 슬롯에 자동 채움 (순서 = reqs 순서와 1:1 매칭)
+  let filled = 0;
+  for (let i = 0; i < urls.length && i < reqs.length; i++) {
+    const url = urls[i];
+    const req = reqs[i];
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
+      const fname = `chatgpt_${String(i+1).padStart(2,'0')}_${req.slug || 'slot'}.png`;
+      const file = new File([blob], fname, { type: blob.type || 'image/png' });
+      // 슬롯 카드 찾기
+      const card = document.querySelector(`.slot-card[data-slug="${CSS.escape(req.slug)}"]`);
+      if (card) {
+        await assignSlot(card, req.slug, file);
+        filled++;
+      } else {
+        console.warn('[auto-chatgpt] slot card not found for slug:', req.slug);
+      }
+    } catch (e) {
+      console.error('[auto-chatgpt] slot fill failed for', req.slug, e);
+    }
+  }
+  setStatus(`✅ ${filled}/${reqs.length}장 슬롯 자동 채움 완료${job.state === 'partial' ? ' (일부 실패)' : ''}`);
+  toast(`ChatGPT 자동 생성 완료 — ${filled}/${reqs.length}장`, filled === reqs.length ? 'success' : 'info', 5000);
+
+  // 자동 연쇄 — 모두 채워졌으면 자동으로 ② HTML 생성 트리거
+  if (autoChain && filled === reqs.length) {
+    setStatus(`✅ ${filled}장 완료 — ② 상세페이지 HTML 자동 생성 시작…`);
+    try {
+      await new Promise(r => setTimeout(r, 0)); // P2b: assignSlot 비동기 반영 race 방지
+      await callGenerate();
+    } catch (e) { console.error('[auto-chatgpt] chain to generate failed:', e); }
+  }
 }
 
 // ────────── Step 3 — ChatGPT 결과 이미지 업로드 슬롯 그리드 ──────────
@@ -1579,6 +1714,8 @@ function bindEvents() {
 
   // ChatGPT 새 탭 열기 — 영문 프롬프트 자동 클립보드 복사 + ChatGPT 새 탭 오픈
   $('#btn-open-chatgpt')?.addEventListener('click', openChatGPTNewTab);
+  // ⚡ ChatGPT(조) 자동 생성 — Playwright로 서버가 4탭 병렬 발사 + 슬롯 자동 채움 + 자동 ② 트리거
+  $('#btn-auto-chatgpt')?.addEventListener('click', withInflight('auto-chatgpt', '#btn-auto-chatgpt', () => autoGenerateViaChatGPT({ autoChain: true })));
 
   $('#btn-copy-html')?.addEventListener('click', () => {
     if (!state.lastGeneratedHTML) {
