@@ -3,7 +3,7 @@
 이 도메인의 메모리 파일 목록.
 
 ## 진척 스냅샷 (이걸 먼저 읽으세요)
-- **[v0.9 — ChatGPT(조) 자동 통합 완성 (2026-06-13)](./project_v0.9_chatgpt_project_integration.md) — 「① 기획」 한 번으로 plan → ChatGPT(조) 진입(펼침 + 더 보기) → 기존 대화 N개 재활용 → 사장님 제품 사진 자동 첨부 → 결과 PNG 다운로드 → Step 3 슬롯 자동 채움. Phase E 자동 테스트 447초 풀 플로우 성공 (커밋 591818c). 핵심 자산: chatgpt-image.mjs(약 850줄, generateImagesInProjectParallel + enterProject 4중 폴백 + findConversationUrls + attachImageToInput + captureExistingImageUrls + isStillGenerating + dismissBlockingModals), server.js(잡 직렬화 큐 + parallel 라우트 + /generated 정적 + realpath 2중 검증), app.js(autoGenerateViaChatGPT + regenerateSingleSlot), 슬롯 카드 「↻ 다시 만들기」 UI. 12건 패치 누적(Codex 5 + 추가 7). 미해결: conversation 학습 오염 → 사장님이 빈 대화 9개+ 새로 만드는 게 정답 (사장님 결정 대기).**
+- **[v0.9 — ChatGPT(조) 자동 통합 완성 + 학습 오염 해결 확정 (2026-06-14)](./project_v0.9_chatgpt_project_integration.md) — 「① 기획」 한 번으로 plan → ChatGPT(조) 진입(펼침 + 더 보기) → 기존 대화 N개 재활용 → 사장님 제품 사진 자동 첨부 → 결과 PNG 다운로드 → Step 3 슬롯 자동 채움. 2026-06-13 9차 풀 플로우 478초 9/9 사과 결과 직접 확인(01/05/09 hero·farm·outro 모두 정상) → "conversation 학습 오염" 우려 해결 확정. 핵심 발견: 매 탭 제품 사진 첨부가 텍스트보다 압도적으로 강해 과거 대화 컨텍스트 무력화 → [영구 규칙으로 승격](./feedback_product_hero_reference.md). 12장 한도(server.js:1907) 사장님 찬성. 다음: 디자인 보완 + 잡 진행 표시 강화.**
 - [인계 — v0.9 ChatGPT 이미지 생성 통합 방향 논의 (2026-06-11)](./handoff_2026-06-11_v0.9_chatgpt_integration.md) — 결정 단계 인계 메모. 위 v0.9 완성 메모로 superseded.
 - **[v0.8.0 — Higgsfield 통합 전면 제거 + ChatGPT 자리표시 (2026-06-10)](./project_v0.8_chatgpt_workflow.md) — 사장님 결정: Higgsfield 구독 해지·MCP/스킬/CLI/v0.7 코드 일체 제거. Step 2 = 영문 프롬프트 카드 + 「🖼️ ChatGPT 새 탭에서 열기」 버튼(클립보드 자동 복사). Step 3 = ChatGPT에서 만든 PNG를 슬롯 드래그/클릭 업로드. 향후 Codex 또는 커스텀 MCP로 ChatGPT 이미지 생성 자동화 통합 예정(조사 단계). v0.7 관련 메모리는 `_archive/` 보존.**
 - **[v0.5.6 — claude Write 도구 차단 + _restore.mjs 복원 패턴](./project_v0.5.6_html_restore_tools_block.md) — claude가 Write로 직접 저장 시도 → "권한 거부" 안내만 받고 HTML 실체 없음. `--tools ""` + prompt "도구 사용 절대 금지" 가드 동시 적용으로 종결. `_restore.mjs`로 `_last_prompt.txt` 재실행 복원 패턴. ROCKMAN ZERO 향수 11섹션 20.8KB 복원 성공. 2026-05-25.**
@@ -20,6 +20,7 @@
 - [크몽 판매 페이지 v1 (1차 완성)](./project_kmong_sales_page_v1.md) — dehayoung 사장님 크몽 서비스 등록용 상세페이지. 10장 JPEG 분할 완료. 2026-05-13.
 
 ## 영구 원칙 (피드백)
+- **[제품 히어로 사진을 ChatGPT 자동 흐름에 항상 레퍼런스 첨부](./feedback_product_hero_reference.md)** — `product_based`/`reference_based` 슬롯은 사장님 제공 제품 사진을 input[type=file]로 항상 자동 첨부. 학습 오염 무력화의 진짜 근거. 2026-06-14 직접 지시.
 - **[구매 CTA 버튼 디자인 금지](./feedback_no_cta_button.md)** — 오픈마켓 상세페이지는 이미지 안 버튼이 클릭 작동 안 함. "지금 구매하기" 같은 버튼 형식 디자인 영구 X. 사장님 명시 요청 시에만 추가. 2026-05-21 직접 지시.
 - **[claude CLI 텍스트 응답 강제 — --tools "" + prompt 가드 동시 적용](./feedback_claude_cli_text_only.md)** — 상세페이지 HTML 생성처럼 텍스트로만 받아야 하는 claude CLI 호출은 spawn `--tools ""` + prompt "도구 사용 절대 금지" 두 방어 동시 적용. 한쪽만 두면 escape 깨지거나 claude가 Write 시도 → "권한 거부" 본문 자리 출현. 2026-05-25 ROCKMAN ZERO 사건 후 확정.
 
